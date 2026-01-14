@@ -17,13 +17,12 @@ import {
 // --- CẤU HÌNH ---
 // 1. DÁN FIREBASE CONFIG CỦA BẠN VÀO ĐÂY
 const firebaseConfig = {
-  // Thay thế bằng thông tin từ Firebase Console của bạn
-  apiKey: "DÁN_API_KEY_TU_FIREBASE_VAO_DAY",
-  authDomain: "DÁN_AUTH_DOMAIN_VAO_DAY",
-  projectId: "DÁN_PROJECT_ID_VAO_DAY",
-  storageBucket: "...",
-  messagingSenderId: "...",
-  appId: "..."
+  apiKey: "AIzaSyC17qmFY6d-1JsvuVsinMEc9E6VHRJCCuw",
+  authDomain: "quanlysv-10f32.firebaseapp.com",
+  projectId: "quanlysv-10f32",
+  storageBucket: "quanlysv-10f32.firebasestorage.app",
+  messagingSenderId: "446370494090",
+  appId: "1:446370494090:web:2a22e8f4fc3713ecb01f73"
 };
 
 // Khởi tạo Firebase
