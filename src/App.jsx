@@ -11,7 +11,7 @@ import {
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
-  GripVertical, ChevronUp, History, Database
+  GripVertical, ChevronUp, History, Database, ShieldAlert
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -24,16 +24,13 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Khởi tạo Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
-
-// QUAN TRỌNG: Bắt buộc phải thêm scope này để đọc Sheet
 googleProvider.addScope("https://www.googleapis.com/auth/spreadsheets.readonly");
-// Force account selection to ensure fresh token
-googleProvider.setCustomParameters({ prompt: 'select_account' });
+// Thêm tham số này để Google không bắt chọn lại tài khoản nếu phiên đăng nhập còn hiệu lực
+googleProvider.setCustomParameters({ prompt: 'select_account' }); 
 
 // --- UTILS ---
 const formatValue = (value) => {
@@ -114,18 +111,12 @@ const LoginScreen = () => {
     setLoading(true);
     try {
         const result = await signInWithPopup(auth, googleProvider);
-        // QUAN TRỌNG: Lưu Access Token từ kết quả đăng nhập
         const credential = GoogleAuthProvider.credentialFromResult(result);
-        const token = credential.accessToken;
-        
-        if (token) {
-            localStorage.setItem('pka_google_token', token);
-            console.log("Token received & saved");
-        } else {
-            console.error("No access token returned!");
+        if (credential?.accessToken) {
+            localStorage.setItem('pka_google_token', credential.accessToken);
         }
     } catch (error) {
-        console.error("Firebase Login Error:", error);
+        console.error("Login Error:", error);
         alert(`Đăng nhập thất bại: ${error.message}`);
         setLoading(false);
     }
@@ -180,9 +171,7 @@ const SetupScreen = ({ user, onConfig }) => {
     e.preventDefault();
     const newEntry = { id: sheetId, range: range, date: new Date().toLocaleDateString('vi-VN') };
     const newHistory = [newEntry, ...history.filter(h => h.id !== sheetId)].slice(0, 5);
-    try {
-        await setDoc(doc(db, "users", user.uid), { history: newHistory }, { merge: true });
-    } catch (e) { console.error("Lỗi lưu lịch sử:", e); }
+    try { await setDoc(doc(db, "users", user.uid), { history: newHistory }, { merge: true }); } catch (e) { console.error(e); }
     onConfig(sheetId, range);
   };
 
@@ -190,9 +179,7 @@ const SetupScreen = ({ user, onConfig }) => {
       e.stopPropagation();
       const updatedHistory = history.filter(h => h.id !== idToDelete);
       setHistory(updatedHistory);
-      try {
-          await setDoc(doc(db, "users", user.uid), { history: updatedHistory }, { merge: true });
-      } catch (e) { console.error("Lỗi xóa lịch sử:", e); }
+      try { await setDoc(doc(db, "users", user.uid), { history: updatedHistory }, { merge: true }); } catch (e) { console.error(e); }
   };
 
   return (
@@ -200,32 +187,13 @@ const SetupScreen = ({ user, onConfig }) => {
       <div className="w-full max-w-lg p-8 bg-white rounded-xl shadow-lg border border-slate-200">
         <h2 className="text-xl font-bold text-blue-900 mb-6 flex items-center gap-2"><Settings className="w-5 h-5" /> Cấu hình Nguồn Dữ liệu</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Spreadsheet ID</label>
-            <input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID của Google Sheet..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Data Range</label>
-            <input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="Ví dụ: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" />
-          </div>
-          
+          <div><label className="block text-sm font-medium text-slate-700 mb-1">Spreadsheet ID</label><input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID của Google Sheet..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
+          <div><label className="block text-sm font-medium text-slate-700 mb-1">Data Range</label><input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="Ví dụ: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
           <div className="mt-4 pt-4 border-t border-slate-100">
               <p className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> Đã dùng gần đây {isLoadingHistory && "(Đang đồng bộ...)"}</p>
-              <div className="space-y-2">
-                  {history.map((h, idx) => (
-                      <div key={idx} onClick={() => { setSheetId(h.id); setRange(h.range); }} className="group relative text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors">
-                          <div className="font-medium text-slate-700 truncate pr-6">{h.id}</div>
-                          <div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div>
-                          <button onClick={(e) => deleteHistoryItem(e, h.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
-                      </div>
-                  ))}
-                  {history.length === 0 && !isLoadingHistory && <p className="text-xs text-slate-300 italic">Chưa có lịch sử</p>}
-              </div>
+              <div className="space-y-2">{history.map((h, idx) => (<div key={idx} onClick={() => { setSheetId(h.id); setRange(h.range); }} className="group relative text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors"><div className="font-medium text-slate-700 truncate pr-6">{h.id}</div><div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div><button onClick={(e) => deleteHistoryItem(e, h.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button></div>))}</div>
           </div>
-
-          <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4">
-            <Check className="w-4 h-4" /> Kết nối Dữ liệu
-          </button>
+          <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4"><Check className="w-4 h-4" /> Kết nối Dữ liệu</button>
         </form>
       </div>
     </motion.div>
@@ -237,6 +205,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [allColumns, setAllColumns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [tokenExpired, setTokenExpired] = useState(false); // Trạng thái token hết hạn
 
   const [isQueryBuilderOpen, setIsQueryBuilderOpen] = useState(true);
   const [colSearchTerm, setColSearchTerm] = useState("");
@@ -257,11 +226,27 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const resizingRef = useRef(null);
   const tableRef = useRef(null);
 
+  // --- HÀM REFRESH TOKEN (THỦ CÔNG) ---
+  const handleRefreshToken = async () => {
+      try {
+          const result = await signInWithPopup(auth, googleProvider);
+          const credential = GoogleAuthProvider.credentialFromResult(result);
+          if (credential?.accessToken) {
+              localStorage.setItem('pka_google_token', credential.accessToken);
+              setTokenExpired(false);
+              setLoadError(null);
+              fetchGoogleSheetData(); // Thử lại ngay
+          }
+      } catch (error) {
+          alert("Gia hạn thất bại: " + error.message);
+      }
+  };
+
   const fetchGoogleSheetData = useCallback(async () => {
-    setLoading(true); setLoadError(null);
+    setLoading(true); setLoadError(null); setTokenExpired(false);
     try {
         const token = localStorage.getItem('pka_google_token');
-        if (!token) throw new Error("TOKEN_MISSING"); // Ký hiệu lỗi riêng
+        if (!token) throw new Error("TOKEN_MISSING");
 
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${firebaseConfig.apiKey}`;
         const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -286,17 +271,15 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
     } catch (error) {
         console.error("Lỗi tải Sheet:", error);
-        
         if (error.message === "TOKEN_MISSING" || error.message === "TOKEN_INVALID") {
-            // Tự động đăng xuất để người dùng đăng nhập lại
-            alert("Phiên làm việc hết hạn hoặc bạn không có quyền xem file này. Vui lòng đăng nhập lại.");
-            onLogout(); 
+            setTokenExpired(true); // Kích hoạt UI gia hạn
+            setLoadError("Phiên làm việc với Google Sheet đã hết hạn (1 giờ).");
         } else {
-            setLoadError(`Lỗi kết nối: ${error.message}. Hãy kiểm tra ID Sheet và quyền Share.`);
+            setLoadError(`Lỗi kết nối: ${error.message}.`);
         }
     }
     setLoading(false);
-  }, [config, onLogout]);
+  }, [config]);
 
   useEffect(() => { fetchGoogleSheetData(); }, [fetchGoogleSheetData]);
 
@@ -393,8 +376,23 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         </div>
       </header>
 
-      <main className="flex-1 p-3 md:p-6 overflow-hidden flex flex-col gap-4 md:gap-6">
-        {loadError && (<div className="bg-red-50 text-red-700 p-4 rounded-lg border border-red-200 flex items-center justify-between"><span>{loadError}</span><button onClick={() => setLoadError(null)}><X size={18}/></button></div>)}
+      <main className="flex-1 p-3 md:p-6 overflow-hidden flex flex-col gap-4 md:gap-6 relative">
+        {/* HIỂN THỊ LỖI VÀ NÚT GIA HẠN KHI TOKEN HẾT HẠN */}
+        {loadError && (
+            <div className={`p-4 rounded-lg border flex items-center justify-between shadow-md ${tokenExpired ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                <div className="flex items-center gap-3">
+                    {tokenExpired ? <ShieldAlert size={24} /> : <X size={20}/>}
+                    <span className="font-medium">{loadError}</span>
+                </div>
+                {tokenExpired ? (
+                    <button onClick={handleRefreshToken} className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg shadow font-bold text-sm transition-colors">
+                        Gia hạn phiên làm việc
+                    </button>
+                ) : (
+                    <button onClick={() => setLoadError(null)} className="p-1 hover:bg-black/5 rounded"><X size={18}/></button>
+                )}
+            </div>
+        )}
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-5 flex flex-col gap-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2 cursor-pointer" onClick={() => setIsQueryBuilderOpen(!isQueryBuilderOpen)}>
