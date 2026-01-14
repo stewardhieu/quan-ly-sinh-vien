@@ -101,7 +101,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
           <div className="mx-auto w-16 h-16 bg-blue-900 rounded-lg flex items-center justify-center mb-4">
             <LayoutTemplate className="text-white w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-bold text-blue-900 uppercase tracking-wide">Hệ thống Quản lý Sinh viên</h1>
+          <h1 className="text-2xl font-bold text-blue-900 uppercase tracking-wide">PKA Management</h1>
           <p className="text-slate-500 text-sm mt-2">Trường Kỹ thuật Phenikaa</p>
         </div>
         <button onClick={() => login()} disabled={loading} className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-300 rounded-lg hover:bg-slate-50 transition-all group">
@@ -291,7 +291,7 @@ const Dashboard = ({ user, config, onLogout }) => {
       <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="bg-blue-900 text-white p-2 rounded"><LayoutTemplate size={20} /></div>
-          <div><h1 className="font-bold text-blue-900 leading-tight">QUẢN LÝ SINH VIÊN</h1><p className="text-xs text-slate-500">Hệ thống Tra cứu & Phân tích dữ liệu</p></div>
+          <div><h1 className="font-bold text-blue-900 leading-tight">PKA MANAGEMENT</h1><p className="text-xs text-slate-500">Hệ thống Tra cứu & Phân tích dữ liệu</p></div>
         </div>
         <div className="flex items-center gap-4">
             <button onClick={() => fetchGoogleSheetData()} className="p-2 text-blue-700 bg-blue-50 rounded hover:bg-blue-100 transition-colors" title="Tải lại dữ liệu"><RefreshCw size={18} /></button>
@@ -323,18 +323,21 @@ const Dashboard = ({ user, config, onLogout }) => {
                  <span className="text-xs text-slate-500">{loading ? 'Đang tải dữ liệu...' : `Dữ liệu gốc: ${rawData.length} dòng`}</span>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* --- PHẦN ĐÃ SỬA: CHUYỂN THÀNH GRID 2 CỘT --- */}
                 <div className="lg:col-span-3 border-r border-slate-100 pr-4 flex flex-col gap-2">
                     <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><List size={16} /> 1. Chọn cột hiển thị</label>
                     <div className="flex gap-2 text-xs mb-1">
                          <button onClick={() => setQueryConfig(p => ({...p, selectedCols: allColumns}))} className="text-blue-700 hover:underline">All</button>
                          <button onClick={() => setQueryConfig(p => ({...p, selectedCols: []}))} className="text-slate-500 hover:underline">None</button>
                     </div>
-                    <div className="flex-1 overflow-y-auto max-h-48 border border-slate-200 rounded p-2 bg-slate-50 grid grid-cols-1 gap-1">
+                    {/* Thay đổi class ở đây: dùng grid-cols-2 */}
+                    <div className="flex-1 overflow-y-auto max-h-[60vh] border border-slate-200 rounded p-2 bg-slate-50 grid grid-cols-2 gap-x-2 gap-y-1 content-start">
                         {allColumns.map(col => (
-                            <label key={col} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded transition-colors">
+                            <label key={col} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-white p-1 rounded transition-colors" title={col}>
                                 <input type="checkbox" checked={queryConfig.selectedCols.includes(col)}
                                     onChange={() => setQueryConfig(p => ({...p, selectedCols: p.selectedCols.includes(col) ? p.selectedCols.filter(c => c !== col) : [...p.selectedCols, col]}))}
-                                    className="rounded text-blue-900 focus:ring-blue-900" />
+                                    className="rounded text-blue-900 focus:ring-blue-900 shrink-0" />
                                 <span className="truncate">{col}</span>
                             </label>
                         ))}
@@ -449,20 +452,17 @@ const Dashboard = ({ user, config, onLogout }) => {
   );
 };
 
-// --- COMPONENT PHÂN TÍCH MỚI (ĐÃ CẬP NHẬT) ---
 const OnDemandAnalytics = ({ data }) => {
     const [activeCharts, setActiveCharts] = useState([]);
     
-    // Logic tính toán thống kê dựa trên dữ liệu thật
+    // Logic tính toán thống kê
     const stats = useMemo(() => {
         if (data.length === 0) return {};
         const firstRow = data[0];
         const keys = Object.keys(firstRow);
 
-        // Hàm tìm cột linh hoạt (không phân biệt hoa thường)
         const findKey = (keyword) => keys.find(k => k.toLowerCase().includes(keyword.toLowerCase()));
 
-        // Tự động map các cột dữ liệu quan trọng
         const colClass = findKey('Lớp') || keys[1];
         const colStatus = findKey('Trạng thái') || findKey('Status');
         const colGender = findKey('Giới tính') || findKey('Phái');
@@ -485,18 +485,16 @@ const OnDemandAnalytics = ({ data }) => {
             if(colArea) counts.area[item[colArea] || 'N/A'] = (counts.area[item[colArea] || 'N/A'] || 0) + 1;
             if(colCourse) counts.course[item[colCourse] || 'N/A'] = (counts.course[item[colCourse] || 'N/A'] || 0) + 1;
             
-            // Logic Đảng viên: Nếu có ngày nhập -> Là Đảng viên
             if(colParty) {
                 const isMember = item[colParty] && item[colParty].trim().length > 4 ? 'Đảng viên' : 'Quần chúng';
                 counts.party[isMember] = (counts.party[isMember] || 0) + 1;
             }
         });
 
-        // Hàm chuyển đổi object thành array cho Recharts
         const toArr = (obj) => Object.entries(obj).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
 
         return {
-            class: toArr(counts.class).slice(0, 15), // Chỉ lấy Top 15 lớp đông nhất
+            class: toArr(counts.class).slice(0, 15), 
             major: toArr(counts.major),
             status: toArr(counts.status),
             gender: toArr(counts.gender),
