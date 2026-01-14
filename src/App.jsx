@@ -11,11 +11,10 @@ import {
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
-  GripVertical, ChevronUp, History, Database, Layers, GitMerge
+  GripVertical, ChevronUp, History, Database
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
-// 1. DÁN FIREBASE CONFIG CỦA BẠN VÀO ĐÂY
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -30,6 +29,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
+// Quan trọng: Xin quyền đọc Google Sheets
 googleProvider.addScope("https://www.googleapis.com/auth/spreadsheets.readonly");
 
 // --- UTILS ---
@@ -111,7 +111,7 @@ const LoginScreen = () => {
     setLoading(true);
     try {
         const result = await signInWithPopup(auth, googleProvider);
-        // QUAN TRỌNG: Lưu Access Token vào LocalStorage để dùng khi F5
+        // LẤY ACCESS TOKEN CỦA GOOGLE API VÀ LƯU LẠI
         const credential = GoogleAuthProvider.credentialFromResult(result);
         const token = credential.accessToken;
         localStorage.setItem('pka_google_token', token);
@@ -147,6 +147,7 @@ const SetupScreen = ({ user, onConfig }) => {
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
+  // Tải lịch sử từ Firestore
   useEffect(() => {
     const loadHistory = async () => {
         if (!user) return;
@@ -180,8 +181,14 @@ const SetupScreen = ({ user, onConfig }) => {
     onConfig(sheetId, range);
   };
 
+  // Hàm xóa lịch sử
   const deleteHistoryItem = async (e, idToDelete) => {
-      e.stopPropagation(); // Ngăn chặn việc click vào item để chọn
+      e.stopPropagation(); // Ngăn click nhầm vào item
+      e.preventDefault();
+      
+      const confirmDelete = window.confirm("Bạn có chắc muốn xóa link này khỏi lịch sử?");
+      if (!confirmDelete) return;
+
       const updatedHistory = history.filter(h => h.id !== idToDelete);
       setHistory(updatedHistory);
       try {
@@ -208,10 +215,10 @@ const SetupScreen = ({ user, onConfig }) => {
               <div className="space-y-2">
                   {history.map((h, idx) => (
                       <div key={idx} onClick={() => { setSheetId(h.id); setRange(h.range); }} className="group relative text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors">
-                          <div className="font-medium text-slate-700 truncate pr-6">{h.id}</div>
+                          <div className="font-medium text-slate-700 truncate pr-8">{h.id}</div>
                           <div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div>
-                          {/* Nút xóa lịch sử */}
-                          <button onClick={(e) => deleteHistoryItem(e, h.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {/* Nút xóa lịch sử (Trash Icon) */}
+                          <button onClick={(e) => deleteHistoryItem(e, h.id)} className="absolute top-2 right-2 p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all" title="Xóa lịch sử">
                               <Trash2 size={14} />
                           </button>
                       </div>
@@ -253,20 +260,22 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   
   const [columnWidths, setColumnWidths] = useState({});
   const resizingRef = useRef(null);
+  const tableRef = useRef(null);
 
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true); setLoadError(null);
     try {
-        // SỬA LỖI: Lấy token từ localStorage thay vì từ user object
-        // Token được lưu ở bước LoginScreen
+        // Lấy Token từ LocalStorage
         const token = localStorage.getItem('pka_google_token');
-        if (!token) throw new Error("Thiếu Access Token. Vui lòng đăng xuất và đăng nhập lại.");
+        if (!token) throw new Error("Phiên đăng nhập hết hạn (Thiếu Token). Vui lòng đăng xuất và đăng nhập lại.");
 
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${firebaseConfig.apiKey}`;
         const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
         
-        if (response.status === 401) throw new Error("Phiên làm việc hết hạn. Hãy đăng nhập lại.");
-        if (!response.ok) throw new Error(response.statusText);
+        if (response.status === 401 || response.status === 403) {
+            throw new Error("Token hết hạn hoặc bạn không có quyền xem file này (403). Hãy đảm bảo file Sheet đã được Share cho email bạn đang dùng.");
+        }
+        if (!response.ok) throw new Error(`Lỗi Google API: ${response.statusText}`);
         
         const result = await response.json();
         const rows = result.values;
@@ -285,10 +294,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
     } catch (error) {
         console.error("Lỗi tải Sheet:", error);
-        setLoadError(error.message || "Lỗi kết nối! File Sheet cần được Share cho email đăng nhập.");
-        if (error.message.includes("hết hạn") || error.message.includes("Token")) {
-            // Có thể tự động logout nếu muốn, ở đây chỉ báo lỗi
-        }
+        setLoadError(error.message);
     }
     setLoading(false);
   }, [config, user]);
@@ -462,7 +468,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   );
 };
 
-// --- COMPONENT PHÂN TÍCH (NÂNG CẤP) ---
+// --- COMPONENT PHÂN TÍCH ---
 const OnDemandAnalytics = ({ data }) => {
     const [activeCharts, setActiveCharts] = useState([]);
     const stats = useMemo(() => {
@@ -549,7 +555,12 @@ export default function App() {
       const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
           if (currentUser) {
             const savedSession = localStorage.getItem('pka_google_token');
-            setUser({ ...currentUser, accessToken: savedSession });
+            if (savedSession) {
+                setUser({ ...currentUser, accessToken: savedSession });
+            } else {
+                // Nếu không có token, ép logout để user đăng nhập lại
+                setUser(null);
+            }
           } else {
               setUser(null);
           }
