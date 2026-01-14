@@ -65,7 +65,7 @@ const exportToExcelXML = (data, columns, filename) => {
   document.body.removeChild(link);
 };
 
-// --- COMPONENT: POPUP CHỌN CỘT (Mới - Giải quyết lỗi dropdown trắng) ---
+// --- COMPONENT: POPUP CHỌN CỘT ---
 const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Chọn cột dữ liệu" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     
@@ -601,9 +601,23 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                                     <tr>
                                         <th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>
                                         {resultState.visibleCols.map((col, cIdx) => (
-                                            <th key={col} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}>
-                                                <div className="flex items-center justify-between gap-1 w-full overflow-hidden cursor-grab active:cursor-grabbing"><span className="truncate" title={col}>{col}</span><GripVertical size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" /></div>
-                                                <div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} />
+                                            <th 
+                                                key={col} 
+                                                style={{ width: columnWidths[col] || 150 }}
+                                                className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors"
+                                                draggable
+                                                onDragStart={(e) => handleDragStart(e, cIdx)}
+                                                onDragOver={(e) => e.preventDefault()}
+                                                onDrop={(e) => handleDrop(e, cIdx)}
+                                            >
+                                                <div className="flex items-center justify-between gap-1 w-full overflow-hidden cursor-grab active:cursor-grabbing">
+                                                    <span className="truncate" title={col}>{col}</span>
+                                                    <GripVertical size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />
+                                                </div>
+                                                <div 
+                                                    className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10"
+                                                    onMouseDown={(e) => startResizing(e, col)}
+                                                />
                                             </th>
                                         ))}
                                     </tr>
@@ -613,7 +627,11 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                                         <tr key={rIdx} className="hover:bg-slate-50">
                                             <td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{rIdx + 1}</td>
                                             {resultState.visibleCols.map((col, cIdx) => (
-                                                <td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>
+                                                <td key={`${rIdx}-${col}`} 
+                                                    onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)}
+                                                    className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>
+                                                    {formatValue(row[col])}
+                                                </td>
                                             ))}
                                         </tr>
                                     ))}
@@ -634,6 +652,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
 const OnDemandAnalytics = ({ data }) => {
     const [activeCharts, setActiveCharts] = useState([]);
+    
     const stats = useMemo(() => {
         if (data.length === 0) return {};
         const keys = Object.keys(data[0]);
@@ -649,6 +668,7 @@ const OnDemandAnalytics = ({ data }) => {
         const colCourse = findKey('Khoá') || findKey('Khóa đào tạo');
 
         const counts = { class: {}, status: {}, gender: {}, method: {}, area: {}, party: {}, major: {}, course: {} };
+
         data.forEach(item => {
             counts.class[item[colClass] || 'Khác'] = (counts.class[item[colClass] || 'Khác'] || 0) + 1;
             counts.major[item[colMajor] || 'Khác'] = (counts.major[item[colMajor] || 'Khác'] || 0) + 1;
@@ -657,18 +677,31 @@ const OnDemandAnalytics = ({ data }) => {
             if(colMethod) counts.method[item[colMethod] || 'N/A'] = (counts.method[item[colMethod] || 'N/A'] || 0) + 1;
             if(colArea) counts.area[item[colArea] || 'N/A'] = (counts.area[item[colArea] || 'N/A'] || 0) + 1;
             if(colCourse) counts.course[item[colCourse] || 'N/A'] = (counts.course[item[colCourse] || 'N/A'] || 0) + 1;
-            if(colParty) { const isMember = item[colParty] && item[colParty].trim().length > 4 ? 'Đảng viên' : 'Quần chúng'; counts.party[isMember] = (counts.party[isMember] || 0) + 1; }
+            
+            if(colParty) {
+                const isMember = item[colParty] && item[colParty].trim().length > 4 ? 'Đảng viên' : 'Quần chúng';
+                counts.party[isMember] = (counts.party[isMember] || 0) + 1;
+            }
         });
+
         const toArr = (obj) => Object.entries(obj).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
+
         return {
-            class: toArr(counts.class).slice(0, 15), major: toArr(counts.major), status: toArr(counts.status), gender: toArr(counts.gender),
-            method: toArr(counts.method), area: toArr(counts.area), party: toArr(counts.party), course: toArr(counts.course),
+            class: toArr(counts.class).slice(0, 15), 
+            major: toArr(counts.major),
+            status: toArr(counts.status),
+            gender: toArr(counts.gender),
+            method: toArr(counts.method),
+            area: toArr(counts.area),
+            party: toArr(counts.party),
+            course: toArr(counts.course),
             hasCol: { status: !!colStatus, gender: !!colGender, method: !!colMethod, area: !!colArea, party: !!colParty, course: !!colCourse }
         };
     }, [data]);
 
     const toggleChart = (id) => setActiveCharts(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
     const COLORS = ['#003366', '#0055AA', '#0077EE', '#4499FF', '#88BBFF', '#CCDDEE', '#FFBB28', '#FF8042'];
+
     const CHART_CONFIG = [
         { id: 'status', label: 'Trạng thái Sinh viên', type: 'pie', show: stats.hasCol?.status },
         { id: 'gender', label: 'Cơ cấu Giới tính', type: 'pie', show: stats.hasCol?.gender },
@@ -682,8 +715,59 @@ const OnDemandAnalytics = ({ data }) => {
 
     return (
         <div className="h-full overflow-y-auto p-4 md:p-6 bg-slate-50">
-            <div className="mb-6"><h3 className="text-sm font-bold text-slate-500 uppercase mb-3">Thêm biểu đồ</h3><div className="flex flex-wrap gap-2">{CHART_CONFIG.filter(c => c.show).map(opt => (<button key={opt.id} onClick={() => toggleChart(opt.id)} className={`px-3 py-2 rounded-full text-xs md:text-sm font-medium border transition-all flex items-center gap-2 ${activeCharts.includes(opt.id) ? 'bg-blue-900 text-white border-blue-900 shadow-md' : 'bg-white text-slate-600 border-slate-300'}`}>{activeCharts.includes(opt.id) ? <Check size={14} /> : <Plus size={14} />} {opt.label}</button>))}</div></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-10"><AnimatePresence>{activeCharts.map(chartId => { const config = CHART_CONFIG.find(c => c.id === chartId); const chartData = stats[chartId]; if (!config || !chartData) return null; return (<motion.div key={chartId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col relative group"><div className="flex justify-between items-center mb-4"><h4 className="font-bold text-blue-900 text-sm md:text-base">{config.label}</h4><button onClick={() => toggleChart(chartId)} className="text-slate-300 hover:text-red-500"><X size={18} /></button></div><div className="flex-1 min-h-0 text-xs"><ResponsiveContainer width="100%" height="100%">{config.type === 'pie' ? (<PieChart><Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{chartData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><RechartsTooltip /><Legend /></PieChart>) : (<BarChart data={chartData} layout={chartData.length > 8 ? 'vertical' : 'horizontal'}><CartesianGrid strokeDasharray="3 3" vertical={false} />{chartData.length > 8 ? <XAxis type="number"/> : <XAxis dataKey="name" interval={0} angle={-15} textAnchor="end" height={60}/>}{chartData.length > 8 ? <YAxis dataKey="name" type="category" width={100}/> : <YAxis />}<RechartsTooltip cursor={{fill: '#f0f9ff'}} /><Bar dataKey="value" fill="#003366" radius={[4, 4, 0, 0]} name="Số lượng" /></BarChart>)}</ResponsiveContainer></div></motion.div>); })}</AnimatePresence></div>
+            <div className="mb-6">
+                <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">Thêm biểu đồ vào Báo cáo</h3>
+                <div className="flex flex-wrap gap-2">
+                    {CHART_CONFIG.filter(c => c.show).map(opt => (
+                        <button key={opt.id} onClick={() => toggleChart(opt.id)}
+                            className={`px-3 py-2 rounded-full text-sm font-medium border transition-all flex items-center gap-2
+                                ${activeCharts.includes(opt.id) ? 'bg-blue-900 text-white border-blue-900 shadow-md' : 'bg-white text-slate-600 border-slate-300 hover:border-blue-900 hover:text-blue-900'}`}>
+                            {activeCharts.includes(opt.id) ? <Check size={14} /> : <Plus size={14} />} {opt.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-10">
+                <AnimatePresence>
+                    {activeCharts.map(chartId => {
+                        const config = CHART_CONFIG.find(c => c.id === chartId);
+                        const chartData = stats[chartId];
+                        if (!config || !chartData) return null;
+
+                        return (
+                            <motion.div key={chartId} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                                className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col relative group">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h4 className="font-bold text-blue-900">{config.label}</h4>
+                                    <button onClick={() => toggleChart(chartId)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X size={18} /></button>
+                                </div>
+                                <div className="flex-1 min-h-0 text-xs">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        {config.type === 'pie' ? (
+                                            <PieChart>
+                                                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                                                    {chartData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                                                </Pie>
+                                                <RechartsTooltip />
+                                                <Legend />
+                                            </PieChart>
+                                        ) : (
+                                            <BarChart data={chartData} layout={chartData.length > 8 ? 'vertical' : 'horizontal'}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                {chartData.length > 8 ? <XAxis type="number"/> : <XAxis dataKey="name" interval={0} angle={-15} textAnchor="end" height={60}/>}
+                                                {chartData.length > 8 ? <YAxis dataKey="name" type="category" width={100}/> : <YAxis />}
+                                                <RechartsTooltip cursor={{fill: '#f0f9ff'}} />
+                                                <Bar dataKey="value" fill="#003366" radius={[4, 4, 0, 0]} name="Số lượng" />
+                                            </BarChart>
+                                        )}
+                                    </ResponsiveContainer>
+                                </div>
+                            </motion.div>
+                        );
+                    })}
+                </AnimatePresence>
+            </div>
         </div>
     );
 };
