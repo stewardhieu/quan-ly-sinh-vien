@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useGoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
+import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -12,8 +12,6 @@ import {
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
-// Lấy Client ID từ env để đảm bảo bảo mật khi deploy
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
 
 // --- UTILS ---
@@ -153,6 +151,8 @@ const SetupScreen = ({ onConfig }) => {
     onConfig(sheetId, range);
   };
 
+  const useHistoryItem = (item) => { setSheetId(item.id); setRange(item.range); };
+
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-lg p-8 bg-white rounded-xl shadow-lg border border-slate-200">
@@ -160,19 +160,7 @@ const SetupScreen = ({ onConfig }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Spreadsheet ID</label><input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID của Google Sheet..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Data Range</label><input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="Ví dụ: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
-          {history.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                  <p className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> Gần đây</p>
-                  <div className="space-y-2">
-                      {history.map((h, idx) => (
-                          <div key={idx} onClick={() => { setSheetId(h.id); setRange(h.range); }} className="text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors">
-                              <div className="font-medium text-slate-700 truncate">{h.id}</div>
-                              <div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div>
-                          </div>
-                      ))}
-                  </div>
-              </div>
-          )}
+          {history.length > 0 && (<div className="mt-4 pt-4 border-t border-slate-100"><p className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> Gần đây</p><div className="space-y-2">{history.map((h, idx) => (<div key={idx} onClick={() => useHistoryItem(h)} className="text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors"><div className="font-medium text-slate-700 truncate">{h.id}</div><div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div></div>))}</div></div>)}
           <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4"><Check className="w-4 h-4" /> Kết nối Dữ liệu</button>
         </form>
       </div>
@@ -245,7 +233,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       else if (modalTarget.type === 'filter') updateFilter(modalTarget.id, 'column', colName);
   };
 
-  // --- RESIZE & DRAG ---
   useEffect(() => {
     const handleMouseMove = (e) => { if (resizingRef.current) { const { col, startX, startWidth } = resizingRef.current; setColumnWidths(prev => ({ ...prev, [col]: Math.max(50, startWidth + (e.clientX - startX)) })); }};
     const handleMouseUp = () => { resizingRef.current = null; document.body.style.cursor = 'default'; };
@@ -284,8 +271,8 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     // 1. Bulk Filter (Fix lỗi: Tách theo dòng, trim khoảng trắng)
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
-      // Tách bằng regex \r?\n để bắt cả xuống dòng window/mac
-      const rawValues = queryConfig.bulkFilter.values.split(/\r?\n/); 
+      // Tách bằng regex \r?\n để bắt cả xuống dòng window/mac, \t cho tab, , cho phẩy
+      const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,]+/); 
       const lookupValues = new Set(
           rawValues.map(s => s.trim().toLowerCase()).filter(s => s !== '')
       );
@@ -311,7 +298,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     });
 
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
-    setCurrentPage(1); // Reset về trang 1
+    setCurrentPage(1);
     setView('table'); 
     if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
@@ -327,7 +314,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const handleCopy = useCallback(() => { 
       const rg = getSelectionRange(); 
       if (!rg || !resultState.data.length) return; 
-      // Chỉ copy dữ liệu trong trang hiện tại để đảm bảo index đúng
+      // Copy từ dữ liệu trang hiện tại
       const pageData = resultState.data.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
       const rows = pageData.slice(rg.minR, rg.maxR + 1); 
       const cols = resultState.visibleCols; 
@@ -395,7 +382,13 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                             <div className="flex justify-between mb-2"><span className="text-xs font-semibold uppercase text-slate-500">Lọc theo danh sách (Paste Excel)</span></div>
                             <div className="flex flex-col md:flex-row gap-2">
                                 <div onClick={() => openColumnModal('bulk')} className="w-full md:w-1/3 border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer hover:border-blue-500 flex justify-between items-center"><span className={`truncate ${!queryConfig.bulkFilter.column ? 'text-slate-400' : 'text-slate-800'}`}>{queryConfig.bulkFilter.column || "Cột đối chiếu"}</span><ChevronDown size={14} className="text-slate-400"/></div>
-                                <input type="text" className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm" placeholder="Paste danh sách mã SV, SĐT..." value={queryConfig.bulkFilter.values} onChange={(e) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, values: e.target.value } }))} />
+                                {/* THAY ĐỔI: Dùng textarea thay input để giữ format xuống dòng */}
+                                <textarea 
+                                    className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm min-h-[40px] max-h-[80px] focus:ring-2 focus:ring-blue-500 outline-none" 
+                                    placeholder="Paste danh sách mã SV, SĐT..." 
+                                    value={queryConfig.bulkFilter.values} 
+                                    onChange={(e) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, values: e.target.value } }))} 
+                                />
                             </div>
                         </div>
                         <div className="flex flex-col gap-2">
@@ -404,6 +397,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                                 {queryConfig.filters.map((filter, idx) => (
                                     <div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0">
                                         <div className="flex items-center gap-1">
+                                            {/* THAY ĐỔI: Thêm chọn Operator */}
                                             {idx > 0 ? (<select className="border border-slate-300 bg-slate-100 rounded px-1 py-2 text-xs font-bold w-16" value={filter.operator} onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}><option value="AND">VÀ</option><option value="OR">HOẶC</option></select>) : <span className="text-slate-400 font-mono text-xs w-16 text-center">Bắt đầu</span>}
                                         </div>
                                         <div onClick={() => openColumnModal('filter', filter.id)} className="flex-1 border border-slate-300 rounded px-3 py-2 cursor-pointer hover:border-blue-500 bg-white flex justify-between items-center"><span className={`truncate ${!filter.column ? 'text-slate-400' : 'text-slate-800'}`}>{filter.column || "(Chọn cột)"}</span><ChevronDown size={14} className="text-slate-400"/></div>
