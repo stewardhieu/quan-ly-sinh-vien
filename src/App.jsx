@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useGoogleLogin } from '@react-oauth/google'; // Dùng thư viện Google OAuth thuần
+import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -9,7 +9,7 @@ import {
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
-  GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon
+  GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, Eraser
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -71,7 +71,13 @@ const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Ch�
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white w-full max-w-md rounded-xl shadow-2xl flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
                 <div className="p-4 border-b border-slate-100 flex justify-between items-center"><h3 className="font-bold text-blue-900">{title}</h3><button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full"><X size={20}/></button></div>
-                <div className="p-3 bg-slate-50 border-b border-slate-100"><div className="relative"><Search size={16} className="absolute left-3 top-2.5 text-slate-400"/><input ref={inputRef} type="text" className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Tìm kiếm tên cột..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div></div>
+                <div className="p-3 bg-slate-50 border-b border-slate-100">
+                    <div className="relative">
+                        <Search size={16} className="absolute left-3 top-2.5 text-slate-400"/>
+                        <input ref={inputRef} type="text" className="w-full pl-9 pr-8 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Tìm kiếm tên cột..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                        {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-2 top-2 p-1 text-slate-400 hover:text-red-500 rounded-full hover:bg-slate-100"><X size={14}/></button>}
+                    </div>
+                </div>
                 <div className="flex-1 overflow-y-auto p-2">{filteredCols.length > 0 ? (<div className="grid grid-cols-1 gap-1">{filteredCols.map(col => (<button key={col} onClick={() => { onSelect(col); onClose(); }} className="text-left px-4 py-3 hover:bg-blue-50 rounded-lg text-sm text-slate-700 hover:text-blue-900 transition-colors flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>{col}</button>))}</div>) : (<div className="p-8 text-center text-slate-400 text-sm">Không tìm thấy cột nào</div>)}</div>
             </motion.div>
         </div>
@@ -95,7 +101,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
             imageUrl: userInfo.data.picture,
             accessToken: tokenResponse.access_token 
         };
-        // Lưu session vào localStorage (Thay cho Firebase)
         localStorage.setItem('pka_user_session', JSON.stringify(userData));
         onLoginSuccess(userData);
       } catch (error) {
@@ -145,8 +150,6 @@ const SetupScreen = ({ onConfig }) => {
   };
 
   const useHistoryItem = (item) => { setSheetId(item.id); setRange(item.range); };
-
-  // Hàm xóa lịch sử (Client-side)
   const deleteHistoryItem = (e, idToDelete) => {
       e.stopPropagation();
       const newHistory = history.filter(h => h.id !== idToDelete);
@@ -201,7 +204,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     setLoading(true); setLoadError(null);
     try {
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${API_KEY}`;
-        // Dùng token của Google OAuth (user.accessToken)
         const response = await axios.get(url, { headers: { Authorization: `Bearer ${user.accessToken}` } });
         const result = response.data;
         const rows = result.values;
@@ -283,8 +285,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         return result;
     });
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
-    setCurrentPage(1); setView('table'); 
-    if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
+    setCurrentPage(1); setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
 
   const handleUndo = () => { if (history.past.length === 0) return; const prev = history.past[history.past.length - 1]; setHistory({ past: history.past.slice(0, -1), future: [{ config: { ...queryConfig }, result: { ...resultState } }, ...history.future] }); setQueryConfig(prev.config); setResultState(prev.result); };
@@ -328,7 +329,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                         <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><List size={16} /> 1. Chọn cột hiển thị</label>
                         <div className="relative">
                             <Search size={14} className="absolute left-2 top-2 text-slate-400"/>
-                            <input type="text" placeholder="Tìm tên cột..." className="w-full pl-8 pr-2 py-1 text-xs border border-slate-200 rounded focus:border-blue-500 outline-none" value={colSearchTerm} onChange={(e) => setColSearchTerm(e.target.value)} />
+                            <input type="text" placeholder="Tìm tên cột..." className="w-full pl-8 pr-8 py-1 text-xs border border-slate-200 rounded focus:border-blue-500 outline-none" value={colSearchTerm} onChange={(e) => setColSearchTerm(e.target.value)} />
                             {colSearchTerm && <button onClick={() => setColSearchTerm('')} className="absolute right-2 top-1.5 text-slate-400 hover:text-red-500"><X size={14}/></button>}
                         </div>
                         <div className="flex gap-2 text-xs mb-1"><button onClick={() => setQueryConfig(p => ({...p, selectedCols: allColumns}))} className="text-blue-700 hover:underline">All</button><button onClick={() => setQueryConfig(p => ({...p, selectedCols: []}))} className="text-slate-500 hover:underline">None</button></div>
@@ -339,9 +340,12 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                         <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><Settings size={16} /> 2. Thiết lập điều kiện</label>
                         <div className="bg-slate-50 p-3 rounded border border-slate-200">
                             <div className="flex justify-between mb-2"><span className="text-xs font-semibold uppercase text-slate-500">Lọc theo danh sách (Paste Excel)</span></div>
-                            <div className="flex flex-col md:flex-row gap-2">
+                            <div className="flex flex-col md:flex-row gap-2 relative">
                                 <div onClick={() => openColumnModal('bulk')} className="w-full md:w-1/3 border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer hover:border-blue-500 flex justify-between items-center"><span className={`truncate ${!queryConfig.bulkFilter.column ? 'text-slate-400' : 'text-slate-800'}`}>{queryConfig.bulkFilter.column || "Cột đối chiếu"}</span><ChevronDown size={14} className="text-slate-400"/></div>
-                                <textarea className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm min-h-[40px] max-h-[80px] focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Paste danh sách mã SV, SĐT..." value={queryConfig.bulkFilter.values} onChange={(e) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, values: e.target.value } }))} />
+                                <div className="flex-1 relative">
+                                    <textarea className="w-full h-full border border-slate-300 rounded px-3 py-2 pr-8 text-sm min-h-[40px] max-h-[80px] focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Paste danh sách mã SV, SĐT..." value={queryConfig.bulkFilter.values} onChange={(e) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, values: e.target.value } }))} />
+                                    {queryConfig.bulkFilter.values && <button onClick={() => setQueryConfig(p => ({...p, bulkFilter: {...p.bulkFilter, values: ''}}))} className="absolute right-2 top-2 text-slate-400 hover:text-red-500 bg-white rounded-full"><X size={14}/></button>}
+                                </div>
                             </div>
                         </div>
                         <div className="flex flex-col gap-2">
@@ -352,7 +356,10 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                                         <div className="flex items-center gap-1">{idx > 0 ? (<select className="border border-slate-300 bg-slate-100 rounded px-1 py-2 text-xs font-bold w-16" value={filter.operator} onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}><option value="AND">VÀ</option><option value="OR">HOẶC</option></select>) : <span className="text-slate-400 font-mono text-xs w-16 text-center">Bắt đầu</span>}</div>
                                         <div onClick={() => openColumnModal('filter', filter.id)} className="flex-1 border border-slate-300 rounded px-3 py-2 cursor-pointer hover:border-blue-500 bg-white flex justify-between items-center"><span className={`truncate ${!filter.column ? 'text-slate-400' : 'text-slate-800'}`}>{filter.column || "(Chọn cột)"}</span><ChevronDown size={14} className="text-slate-400"/></div>
                                         <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}><option value="contains">Chứa</option><option value="not_contains">Không chứa</option><option value="equals">Bằng tuyệt đối</option><option value="not_equals">Khác</option><option value="starts">Bắt đầu với</option><option value="greater">Lớn hơn</option><option value="less">Nhỏ hơn</option></select>
-                                        <input type="text" className="flex-1 border border-slate-300 rounded px-3 py-2 w-full" placeholder="Giá trị..." value={filter.value} onChange={(e) => updateFilter(filter.id, 'value', e.target.value)} />
+                                        <div className="flex-1 relative w-full">
+                                            <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 pr-8" placeholder="Giá trị..." value={filter.value} onChange={(e) => updateFilter(filter.id, 'value', e.target.value)} />
+                                            {filter.value && <button onClick={() => updateFilter(filter.id, 'value', '')} className="absolute right-2 top-2.5 text-slate-400 hover:text-red-500"><X size={14}/></button>}
+                                        </div>
                                         <button onClick={() => removeFilterCondition(filter.id)} className="text-red-400 hover:text-red-600 p-1 self-end md:self-center"><Trash2 size={16} /></button>
                                     </div>
                                 ))}
@@ -393,81 +400,118 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   );
 };
 
-// --- SUPER ANALYTICS DASHBOARD ---
-const SuperAnalytics = ({ data }) => {
-    if (!data || data.length === 0) return <div className="p-10 text-center text-slate-400">Không có dữ liệu để phân tích</div>;
-
-    const [chartType, setChartType] = useState('bar');
-    const [xAxisKey, setXAxisKey] = useState('');
-    const [yAxisKey, setYAxisKey] = useState('count');
-    const [aggType, setAggType] = useState('count');
-
-    const columns = Object.keys(data[0]);
-
-    useEffect(() => {
-        const potentialX = columns.find(c => ['Lớp', 'Ngành', 'Khoa', 'Trạng thái', 'Giới tính'].some(k => c.includes(k))) || columns[1];
-        setXAxisKey(potentialX);
-    }, []);
+// --- CHART CARD COMPONENT (Modular) ---
+const ChartCard = ({ config, data, onDelete }) => {
+    const [type, setType] = useState(config.type || 'bar');
+    const [xAxis, setXAxis] = useState(config.x);
+    const [yAxis, setYAxis] = useState(config.y || 'count');
+    
+    const columns = Object.keys(data[0] || {});
 
     const processedData = useMemo(() => {
-        if (!xAxisKey) return [];
         const grouped = data.reduce((acc, row) => {
-            const key = row[xAxisKey] || 'N/A';
+            const key = row[xAxis] || 'N/A';
             if (!acc[key]) acc[key] = { name: key, count: 0, sum: 0, values: [] };
             acc[key].count += 1;
-            if (yAxisKey !== 'count') {
-                const val = parseFloat(row[yAxisKey]);
+            if (yAxis !== 'count') {
+                const val = parseFloat(row[yAxis]);
                 if (!isNaN(val)) { acc[key].sum += val; acc[key].values.push(val); }
             }
             return acc;
         }, {});
-
         return Object.values(grouped).map(item => {
-            let value = item.count;
-            if (yAxisKey !== 'count') {
-                if (aggType === 'sum') value = item.sum;
-                if (aggType === 'avg') value = item.values.length ? (item.sum / item.values.length).toFixed(2) : 0;
-            }
-            return { name: item.name, value: Number(value) };
-        }).sort((a, b) => b.value - a.value);
-    }, [data, xAxisKey, yAxisKey, aggType]);
+            let val = item.count;
+            if (yAxis !== 'count') val = item.sum; // Simple Sum for now
+            return { name: item.name, value: Number(val) };
+        }).sort((a,b) => b.value - a.value).slice(0, 20); // Top 20 only for UI clean
+    }, [data, xAxis, yAxis]);
 
-    const COLORS = ['#003366', '#0055AA', '#0077EE', '#4499FF', '#88BBFF', '#FF8042', '#FFBB28'];
-
-    const renderChart = () => {
-        const CommonAxis = <><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis /><RechartsTooltip /><Legend /></>;
-        switch (chartType) {
-            case 'line': return <LineChart data={processedData}>{CommonAxis}<Line type="monotone" dataKey="value" stroke="#003366" strokeWidth={2} /></LineChart>;
-            case 'area': return <AreaChart data={processedData}>{CommonAxis}<Area type="monotone" dataKey="value" fill="#003366" stroke="#003366" /></AreaChart>;
-            case 'pie': return <PieChart><Pie data={processedData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>{processedData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><RechartsTooltip /><Legend /></PieChart>;
-            default: return <BarChart data={processedData}>{CommonAxis}<Bar dataKey="value" fill="#003366" /></BarChart>;
-        }
+    const COLORS = ['#003366', '#0055AA', '#0077EE', '#4499FF', '#88BBFF'];
+    const renderContent = () => {
+        const Cmp = { bar: BarChart, line: LineChart, area: AreaChart, pie: PieChart }[type] || BarChart;
+        const DataEl = { bar: Bar, line: Line, area: Area }[type];
+        
+        return (
+            <ResponsiveContainer width="100%" height="100%">
+                <Cmp data={processedData}>
+                    {type !== 'pie' && <CartesianGrid strokeDasharray="3 3" />}
+                    {type !== 'pie' && <XAxis dataKey="name" height={60} tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end"/>}
+                    {type !== 'pie' && <YAxis />}
+                    <RechartsTooltip />
+                    <Legend />
+                    {type === 'pie' ? 
+                        <Pie data={processedData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{processedData.map((e,i)=> <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie> :
+                        <DataEl type="monotone" dataKey="value" fill="#003366" stroke="#003366" name={yAxis === 'count' ? 'Số lượng' : yAxis} />
+                    }
+                </Cmp>
+            </ResponsiveContainer>
+        );
     };
 
     return (
+        <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-96 flex flex-col">
+            <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
+                <div className="flex gap-2">
+                    <select className="text-xs border rounded p-1 font-bold text-blue-900" value={type} onChange={e=>setType(e.target.value)}>
+                        <option value="bar">Cột</option><option value="line">Đường</option><option value="pie">Tròn</option><option value="area">Vùng</option>
+                    </select>
+                    <select className="text-xs border rounded p-1 max-w-[100px]" value={xAxis} onChange={e=>setXAxis(e.target.value)}>{columns.map(c=><option key={c} value={c}>{c}</option>)}</select>
+                </div>
+                <button onClick={onDelete} className="text-slate-300 hover:text-red-500"><X size={16}/></button>
+            </div>
+            <div className="flex-1 min-h-0 text-xs font-medium">{renderContent()}</div>
+        </motion.div>
+    );
+};
+
+// --- SUPER ANALYTICS DASHBOARD ---
+const SuperAnalytics = ({ data }) => {
+    if (!data || data.length === 0) return <div className="p-10 text-center text-slate-400">Chưa có dữ liệu. Vui lòng chạy truy vấn.</div>;
+    const [charts, setCharts] = useState([]);
+    const columns = Object.keys(data[0]);
+
+    const addChart = (config) => setCharts(p => [...p, { id: Date.now(), ...config }]);
+    const removeChart = (id) => setCharts(p => p.filter(c => c.id !== id));
+
+    // Auto Detect Templates
+    const templates = useMemo(() => {
+        const find = k => columns.find(c => c.toLowerCase().includes(k));
+        return [
+            { label: 'Trạng thái', x: find('trạng thái') || find('status') },
+            { label: 'Giới tính', x: find('giới tính') || find('phái'), type: 'pie' },
+            { label: 'Ngành học', x: find('ngành') || find('chương trình') },
+            { label: 'Lớp', x: find('lớp') },
+            { label: 'Khu vực', x: find('khu vực') },
+        ].filter(t => t.x);
+    }, [columns]);
+
+    return (
         <div className="h-full flex flex-col bg-slate-50">
-            <div className="p-4 bg-white border-b border-slate-200 grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Loại biểu đồ</label>
-                    <div className="flex bg-slate-100 p-1 rounded-lg">
-                        {['bar', 'line', 'area', 'pie'].map(type => (
-                            <button key={type} onClick={() => setChartType(type)} className={`flex-1 p-1 rounded ${chartType === type ? 'bg-white shadow text-blue-900' : 'text-slate-400 hover:text-slate-600'}`}>
-                                {type === 'bar' && <BarChart3 size={16} className="mx-auto"/>}{type === 'line' && <LineIcon size={16} className="mx-auto"/>}{type === 'area' && <Database size={16} className="mx-auto"/>}{type === 'pie' && <PieIcon size={16} className="mx-auto"/>}
-                            </button>
+            <div className="p-4 bg-white border-b border-slate-200">
+                <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase mr-2">Mẫu nhanh:</span>
+                    {templates.map(t => (
+                        <button key={t.label} onClick={() => addChart({ x: t.x, y: 'count', type: t.type || 'bar' })} className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium hover:bg-blue-100 border border-blue-200 transition-colors">+ {t.label}</button>
+                    ))}
+                    <div className="h-6 w-px bg-slate-200 mx-2"></div>
+                    <button onClick={() => addChart({ x: columns[0], y: 'count', type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
+                    {charts.length > 0 && <button onClick={() => setCharts([])} className="ml-auto text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 size={16}/></button>}
+                </div>
+            </div>
+            
+            <div className="flex-1 p-6 overflow-y-auto">
+                {charts.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                        <BarChart3 size={48} className="mb-2 opacity-50"/>
+                        <p>Chọn mẫu biểu đồ ở trên để bắt đầu phân tích</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
+                        {charts.map(chart => (
+                            <ChartCard key={chart.id} config={chart} data={data} onDelete={() => removeChart(chart.id)} />
                         ))}
                     </div>
-                </div>
-                <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Trục X (Nhóm)</label><select className="w-full border border-slate-300 rounded px-2 py-1 text-sm" value={xAxisKey} onChange={e => setXAxisKey(e.target.value)}>{columns.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Trục Y (Giá trị)</label><select className="w-full border border-slate-300 rounded px-2 py-1 text-sm" value={yAxisKey} onChange={e => setYAxisKey(e.target.value)}><option value="count">Đếm (Count)</option>{columns.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                {yAxisKey !== 'count' && (<div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Phép tính</label><select className="w-full border border-slate-300 rounded px-2 py-1 text-sm" value={aggType} onChange={e => setAggType(e.target.value)}><option value="sum">Tổng (Sum)</option><option value="avg">TB (Average)</option></select></div>)}
-            </div>
-            <div className="flex-1 p-6 overflow-y-auto">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200"><div className="text-slate-500 text-xs uppercase font-bold">Tổng số bản ghi</div><div className="text-3xl font-bold text-blue-900 mt-1">{data.length}</div></div>
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200"><div className="text-slate-500 text-xs uppercase font-bold">Số nhóm</div><div className="text-3xl font-bold text-green-600 mt-1">{processedData.length}</div></div>
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200"><div className="text-slate-500 text-xs uppercase font-bold">Max Value</div><div className="text-3xl font-bold text-orange-500 mt-1">{processedData.length > 0 ? Math.max(...processedData.map(d => d.value)) : 0}</div></div>
-                </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-96"><ResponsiveContainer width="100%" height="100%">{renderChart()}</ResponsiveContainer></div>
+                )}
             </div>
         </div>
     );
