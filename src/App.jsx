@@ -8,7 +8,7 @@ import {
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
-  GripVertical, ChevronUp, Menu
+  GripVertical, ChevronUp, History, Database
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -65,66 +65,70 @@ const exportToExcelXML = (data, columns, filename) => {
   document.body.removeChild(link);
 };
 
-// --- COMPONENT: SEARCHABLE DROPDOWN (Mới) ---
-const SearchableSelect = ({ options, value, onChange, placeholder = "Chọn...", className="" }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const [search, setSearch] = useState("");
-    const wrapperRef = useRef(null);
-
-    // Click outside to close
+// --- COMPONENT: POPUP CHỌN CỘT (Mới - Giải quyết lỗi dropdown trắng) ---
+const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Chọn cột dữ liệu" }) => {
+    const [searchTerm, setSearchTerm] = useState("");
+    
+    // Focus vào ô tìm kiếm khi mở popup
+    const inputRef = useRef(null);
     useEffect(() => {
-        function handleClickOutside(event) {
-            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-                setIsOpen(false);
-            }
+        if (isOpen && inputRef.current) {
+            setTimeout(() => inputRef.current.focus(), 100);
         }
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [wrapperRef]);
+        setSearchTerm("");
+    }, [isOpen]);
 
-    const filteredOptions = options.filter(opt => opt.toLowerCase().includes(search.toLowerCase()));
+    if (!isOpen) return null;
+
+    const filteredCols = columns.filter(c => c.toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
-        <div className={`relative ${className}`} ref={wrapperRef}>
-            <div 
-                className="border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer flex justify-between items-center shadow-sm hover:border-blue-500"
-                onClick={() => { setIsOpen(!isOpen); setSearch(""); }} // Reset search on open
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
+            <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white w-full max-w-md rounded-xl shadow-2xl flex flex-col max-h-[80vh]"
+                onClick={e => e.stopPropagation()}
             >
-                <span className={`truncate ${!value ? 'text-slate-400' : 'text-slate-800'}`}>
-                    {value || placeholder}
-                </span>
-                <ChevronDown size={14} className="text-slate-400 ml-2" />
-            </div>
-
-            {isOpen && (
-                <div className="absolute z-50 mt-1 w-full bg-white border border-slate-300 rounded-lg shadow-xl max-h-60 flex flex-col min-w-[200px]">
-                    <div className="p-2 border-b border-slate-100 sticky top-0 bg-white rounded-t-lg">
+                <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="font-bold text-blue-900">{title}</h3>
+                    <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full"><X size={20}/></button>
+                </div>
+                
+                <div className="p-3 bg-slate-50 border-b border-slate-100">
+                    <div className="relative">
+                        <Search size={16} className="absolute left-3 top-2.5 text-slate-400"/>
                         <input 
+                            ref={inputRef}
                             type="text" 
-                            autoFocus
-                            placeholder="Tìm kiếm..." 
-                            className="w-full px-2 py-1 text-sm border border-slate-200 rounded focus:outline-none focus:border-blue-500"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder="Tìm kiếm tên cột..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    <div className="overflow-y-auto flex-1">
-                        {filteredOptions.length > 0 ? (
-                            filteredOptions.map(opt => (
-                                <div 
-                                    key={opt} 
-                                    className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${value === opt ? 'bg-blue-100 text-blue-900 font-medium' : 'text-slate-700'}`}
-                                    onClick={() => { onChange(opt); setIsOpen(false); }}
-                                >
-                                    {opt}
-                                </div>
-                            ))
-                        ) : (
-                            <div className="px-3 py-2 text-xs text-slate-400 italic text-center">Không tìm thấy</div>
-                        )}
-                    </div>
                 </div>
-            )}
+
+                <div className="flex-1 overflow-y-auto p-2">
+                    {filteredCols.length > 0 ? (
+                        <div className="grid grid-cols-1 gap-1">
+                            {filteredCols.map(col => (
+                                <button 
+                                    key={col}
+                                    onClick={() => { onSelect(col); onClose(); }}
+                                    className="text-left px-4 py-3 hover:bg-blue-50 rounded-lg text-sm text-slate-700 hover:text-blue-900 transition-colors flex items-center gap-2"
+                                >
+                                    <div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>
+                                    {col}
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="p-8 text-center text-slate-400 text-sm">Không tìm thấy cột nào</div>
+                    )}
+                </div>
+            </motion.div>
         </div>
     );
 };
@@ -133,6 +137,7 @@ const SearchableSelect = ({ options, value, onChange, placeholder = "Chọn...",
 
 const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
+  
   const login = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setLoading(true);
@@ -140,12 +145,15 @@ const LoginScreen = ({ onLoginSuccess }) => {
         const userInfo = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
         });
-        onLoginSuccess({
+        const userData = {
             name: userInfo.data.name,
             email: userInfo.data.email,
             imageUrl: userInfo.data.picture,
             accessToken: tokenResponse.access_token 
-        });
+        };
+        // Lưu session vào localStorage
+        localStorage.setItem('pka_user_session', JSON.stringify(userData));
+        onLoginSuccess(userData);
       } catch (error) {
         console.error("Lỗi lấy thông tin user:", error);
         alert("Đăng nhập thành công nhưng không lấy được thông tin.");
@@ -180,18 +188,38 @@ const LoginScreen = ({ onLoginSuccess }) => {
 };
 
 const SetupScreen = ({ onConfig }) => {
-  const [sheetId, setSheetId] = useState(localStorage.getItem('sheet_id') || '');
-  const [range, setRange] = useState(localStorage.getItem('sheet_range') || 'Sheet1!A:Z');
-  
+  const [sheetId, setSheetId] = useState(localStorage.getItem('last_sheet_id') || '');
+  const [range, setRange] = useState(localStorage.getItem('last_sheet_range') || 'Sheet1!A:Z');
+  const [history, setHistory] = useState([]);
+
+  useEffect(() => {
+      const savedHistory = JSON.parse(localStorage.getItem('sheet_history') || '[]');
+      setHistory(savedHistory);
+  }, []);
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    localStorage.setItem('sheet_id', sheetId);
-    localStorage.setItem('sheet_range', range);
+    
+    // Lưu lịch sử
+    const newHistory = [
+        { id: sheetId, range: range, date: new Date().toLocaleDateString('vi-VN') }, 
+        ...history.filter(h => h.id !== sheetId) // Xóa trùng
+    ].slice(0, 5); // Giữ 5 cái gần nhất
+
+    localStorage.setItem('sheet_history', JSON.stringify(newHistory));
+    localStorage.setItem('last_sheet_id', sheetId);
+    localStorage.setItem('last_sheet_range', range);
+    
     onConfig(sheetId, range);
   };
 
+  const useHistoryItem = (item) => {
+      setSheetId(item.id);
+      setRange(item.range);
+  };
+
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4">
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-lg p-8 bg-white rounded-xl shadow-lg border border-slate-200">
         <h2 className="text-xl font-bold text-blue-900 mb-6 flex items-center gap-2">
           <Settings className="w-5 h-5" /> Cấu hình Nguồn Dữ liệu
@@ -205,8 +233,23 @@ const SetupScreen = ({ onConfig }) => {
             <label className="block text-sm font-medium text-slate-700 mb-1">Data Range</label>
             <input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="Ví dụ: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" />
           </div>
-          <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2">
-            <Check className="w-4 h-4" /> Bắt đầu làm việc
+          
+          {history.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                  <p className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> Gần đây</p>
+                  <div className="space-y-2">
+                      {history.map((h, idx) => (
+                          <div key={idx} onClick={() => useHistoryItem(h)} className="text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors">
+                              <div className="font-medium text-slate-700 truncate">{h.id}</div>
+                              <div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          )}
+
+          <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4">
+            <Check className="w-4 h-4" /> Kết nối Dữ liệu
           </button>
         </form>
       </div>
@@ -214,15 +257,19 @@ const SetupScreen = ({ onConfig }) => {
   );
 };
 
-const Dashboard = ({ user, config, onLogout }) => {
+const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [rawData, setRawData] = useState([]);
   const [allColumns, setAllColumns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
-  // Responsive state
-  const [isQueryBuilderOpen, setIsQueryBuilderOpen] = useState(true); // Toggle query builder on mobile
-  const [colSearchTerm, setColSearchTerm] = useState(""); // Search for columns
+  // UI State
+  const [isQueryBuilderOpen, setIsQueryBuilderOpen] = useState(true);
+  const [colSearchTerm, setColSearchTerm] = useState("");
+  
+  // MODAL STATE (Dùng cho chọn cột)
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalTarget, setModalTarget] = useState({ type: '', id: null }); // type: 'bulk' | 'filter', id: filterId
 
   const [queryConfig, setQueryConfig] = useState({
     selectedCols: [],
@@ -235,10 +282,9 @@ const Dashboard = ({ user, config, onLogout }) => {
   const [history, setHistory] = useState({ past: [], future: [] });
   const [view, setView] = useState('table');
   
-  // Table Resize & Reorder State
   const [columnWidths, setColumnWidths] = useState({});
   const tableRef = useRef(null);
-  const resizingRef = useRef(null); // { col: string, startX: number, startWidth: number }
+  const resizingRef = useRef(null);
 
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true);
@@ -263,22 +309,34 @@ const Dashboard = ({ user, config, onLogout }) => {
         setRawData(formattedData);
         setAllColumns(headers); 
         setQueryConfig(prev => ({ ...prev, selectedCols: headers.slice(0, 5) }));
-        
-        // Init widths
         const initWidths = {};
         headers.forEach(h => initWidths[h] = 150);
         setColumnWidths(initWidths);
 
     } catch (error) {
         console.error("Lỗi tải Sheet:", error);
-        setLoadError(error.response?.status === 403 ? "Bạn không có quyền truy cập file này." : "Lỗi kết nối!");
+        setLoadError(error.response?.status === 403 ? "Bạn không có quyền truy cập file này." : "Lỗi kết nối! Kiểm tra lại ID Sheet hoặc Mạng.");
     }
     setLoading(false);
   }, [config, user.accessToken]);
 
   useEffect(() => { fetchGoogleSheetData(); }, [fetchGoogleSheetData]);
 
-  // --- RESIZE HANDLER ---
+  // --- HANDLER MODAL CHỌN CỘT ---
+  const openColumnModal = (type, id = null) => {
+      setModalTarget({ type, id });
+      setIsModalOpen(true);
+  };
+
+  const handleColumnSelect = (colName) => {
+      if (modalTarget.type === 'bulk') {
+          setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, column: colName } }));
+      } else if (modalTarget.type === 'filter') {
+          updateFilter(modalTarget.id, 'column', colName);
+      }
+  };
+
+  // --- RESIZE & DRAG ---
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (resizingRef.current) {
@@ -297,28 +355,22 @@ const Dashboard = ({ user, config, onLogout }) => {
   }, []);
 
   const startResizing = (e, col) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     resizingRef.current = { col, startX: e.clientX, startWidth: columnWidths[col] || 150 };
     document.body.style.cursor = 'col-resize';
   };
 
-  // --- REORDER HANDLER (Drag & Drop) ---
-  const handleDragStart = (e, colIndex) => {
-    e.dataTransfer.setData("colIndex", colIndex);
-  };
+  const handleDragStart = (e, colIndex) => { e.dataTransfer.setData("colIndex", colIndex); };
   const handleDrop = (e, targetIndex) => {
     const sourceIndex = parseInt(e.dataTransfer.getData("colIndex"));
     if (sourceIndex === targetIndex) return;
-    
     const newCols = [...resultState.visibleCols];
     const [movedCol] = newCols.splice(sourceIndex, 1);
     newCols.splice(targetIndex, 0, movedCol);
-    
     setResultState(prev => ({ ...prev, visibleCols: newCols }));
   };
 
-  // --- UI HANDLERS (Selection, Undo, Redo...) ---
+  // --- UI LOGIC ---
   useEffect(() => {
     const handleWindowMouseUp = () => { if (selection.isDragging) setSelection(prev => ({ ...prev, isDragging: false })); };
     window.addEventListener('mouseup', handleWindowMouseUp);
@@ -352,7 +404,6 @@ const Dashboard = ({ user, config, onLogout }) => {
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
     setSelection({ start: {row: null, col: null}, end: {row: null, col: null}, isDragging: false });
     setView('table');
-    // Mobile: Auto collapse query builder after run
     if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
 
@@ -395,8 +446,6 @@ const Dashboard = ({ user, config, onLogout }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleCopy]);
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
-
-  // Filter columns for sidebar
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
 
   return (
@@ -407,6 +456,9 @@ const Dashboard = ({ user, config, onLogout }) => {
           <div><h1 className="font-bold text-blue-900 leading-tight text-sm md:text-base">PKA MANAGEMENT</h1><p className="text-xs text-slate-500 hidden md:block">Hệ thống Tra cứu & Phân tích dữ liệu</p></div>
         </div>
         <div className="flex items-center gap-2 md:gap-4">
+            <button onClick={onChangeSource} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200 transition-colors">
+                <Database size={14} /> <span className="hidden md:inline">Đổi nguồn dữ liệu</span>
+            </button>
             <button onClick={() => fetchGoogleSheetData()} className="p-2 text-blue-700 bg-blue-50 rounded hover:bg-blue-100" title="Tải lại"><RefreshCw size={18} /></button>
             <div className="h-6 w-px bg-slate-300 hidden md:block"></div>
             <div className="hidden md:flex items-center gap-2 bg-slate-50 rounded p-1">
@@ -415,7 +467,7 @@ const Dashboard = ({ user, config, onLogout }) => {
             </div>
             <div className="flex items-center gap-2">
                 {user.imageUrl && <img src={user.imageUrl} alt="Avatar" className="w-8 h-8 rounded-full" />}
-                <button onClick={onLogout} className="text-slate-400 hover:text-red-500 ml-2"><LogOut size={18} /></button>
+                <button onClick={onLogout} className="text-slate-400 hover:text-red-500 ml-2" title="Đăng xuất"><LogOut size={18} /></button>
             </div>
         </div>
       </header>
@@ -440,31 +492,15 @@ const Dashboard = ({ user, config, onLogout }) => {
                  </div>
             </div>
 
-            {/* QUERY BUILDER CONTENT (Collapsible) */}
             <AnimatePresence>
             {isQueryBuilderOpen && (
-                <motion.div 
-                    initial={{ height: 0, opacity: 0 }} 
-                    animate={{ height: 'auto', opacity: 1 }} 
-                    exit={{ height: 0, opacity: 0 }}
-                    className="grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden"
-                >
-                    {/* CỘT 1: CHỌN CỘT (Có tìm kiếm) */}
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden">
                     <div className="lg:col-span-3 border-r border-slate-100 lg:pr-4 flex flex-col gap-2">
                         <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><List size={16} /> 1. Chọn cột hiển thị</label>
-                        
-                        {/* Search Input for Columns */}
                         <div className="relative">
                             <Search size={14} className="absolute left-2 top-2 text-slate-400"/>
-                            <input 
-                                type="text" 
-                                placeholder="Tìm tên cột..." 
-                                className="w-full pl-8 pr-2 py-1 text-xs border border-slate-200 rounded focus:border-blue-500 outline-none"
-                                value={colSearchTerm}
-                                onChange={(e) => setColSearchTerm(e.target.value)}
-                            />
+                            <input type="text" placeholder="Tìm tên cột..." className="w-full pl-8 pr-2 py-1 text-xs border border-slate-200 rounded focus:border-blue-500 outline-none" value={colSearchTerm} onChange={(e) => setColSearchTerm(e.target.value)} />
                         </div>
-
                         <div className="flex gap-2 text-xs mb-1">
                             <button onClick={() => setQueryConfig(p => ({...p, selectedCols: allColumns}))} className="text-blue-700 hover:underline">All</button>
                             <button onClick={() => setQueryConfig(p => ({...p, selectedCols: []}))} className="text-slate-500 hover:underline">None</button>
@@ -481,19 +517,17 @@ const Dashboard = ({ user, config, onLogout }) => {
                         </div>
                     </div>
 
-                    {/* CỘT 2: BỘ LỌC (Dùng SearchableSelect) */}
                     <div className="lg:col-span-6 flex flex-col gap-4 lg:px-2">
                         <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><Settings size={16} /> 2. Thiết lập điều kiện</label>
                         <div className="bg-slate-50 p-3 rounded border border-slate-200">
                             <div className="flex justify-between mb-2"><span className="text-xs font-semibold uppercase text-slate-500">Lọc theo danh sách (Paste Excel)</span></div>
                             <div className="flex flex-col md:flex-row gap-2">
-                                <SearchableSelect 
-                                    className="w-full md:w-1/3"
-                                    options={allColumns}
-                                    value={queryConfig.bulkFilter.column}
-                                    onChange={(val) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, column: val } }))}
-                                    placeholder="Cột đối chiếu"
-                                />
+                                <div onClick={() => openColumnModal('bulk')} className="w-full md:w-1/3 border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer hover:border-blue-500 flex justify-between items-center">
+                                    <span className={`truncate ${!queryConfig.bulkFilter.column ? 'text-slate-400' : 'text-slate-800'}`}>
+                                        {queryConfig.bulkFilter.column || "Cột đối chiếu"}
+                                    </span>
+                                    <ChevronDown size={14} className="text-slate-400"/>
+                                </div>
                                 <input type="text" className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm" placeholder="Paste danh sách mã SV, SĐT..."
                                     value={queryConfig.bulkFilter.values} onChange={(e) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, values: e.target.value } }))} />
                             </div>
@@ -507,13 +541,12 @@ const Dashboard = ({ user, config, onLogout }) => {
                                 {queryConfig.filters.map((filter, idx) => (
                                     <div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0">
                                         <span className="text-slate-400 font-mono text-xs w-4 hidden md:inline">{idx + 1}.</span>
-                                        <SearchableSelect 
-                                            className="w-full md:w-1/3"
-                                            options={allColumns}
-                                            value={filter.column}
-                                            onChange={(val) => updateFilter(filter.id, 'column', val)}
-                                            placeholder="(Chọn cột)"
-                                        />
+                                        <div onClick={() => openColumnModal('filter', filter.id)} className="w-full md:w-1/3 border border-slate-300 rounded px-3 py-2 cursor-pointer hover:border-blue-500 bg-white flex justify-between items-center">
+                                             <span className={`truncate ${!filter.column ? 'text-slate-400' : 'text-slate-800'}`}>
+                                                {filter.column || "(Chọn cột)"}
+                                             </span>
+                                             <ChevronDown size={14} className="text-slate-400"/>
+                                        </div>
                                         <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}>
                                             <option value="contains">Chứa</option>
                                             <option value="equals">Bằng tuyệt đối</option>
@@ -527,7 +560,6 @@ const Dashboard = ({ user, config, onLogout }) => {
                         </div>
                     </div>
 
-                    {/* CỘT 3: NÚT CHẠY */}
                     <div className="lg:col-span-3 border-l border-slate-100 lg:pl-4 flex flex-col justify-end pb-1">
                         <button onClick={runQuery} disabled={loading} className="w-full py-3 bg-blue-900 hover:bg-blue-800 disabled:bg-slate-300 text-white rounded-lg shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95">
                             {loading ? <RefreshCw className="animate-spin" /> : <Play size={20} fill="currentColor" />}
@@ -569,24 +601,9 @@ const Dashboard = ({ user, config, onLogout }) => {
                                     <tr>
                                         <th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>
                                         {resultState.visibleCols.map((col, cIdx) => (
-                                            <th 
-                                                key={col} 
-                                                style={{ width: columnWidths[col] || 150 }}
-                                                className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors"
-                                                draggable
-                                                onDragStart={(e) => handleDragStart(e, cIdx)}
-                                                onDragOver={(e) => e.preventDefault()}
-                                                onDrop={(e) => handleDrop(e, cIdx)}
-                                            >
-                                                <div className="flex items-center justify-between gap-1 w-full overflow-hidden cursor-grab active:cursor-grabbing">
-                                                    <span className="truncate" title={col}>{col}</span>
-                                                    <GripVertical size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />
-                                                </div>
-                                                {/* Resize Handle */}
-                                                <div 
-                                                    className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10"
-                                                    onMouseDown={(e) => startResizing(e, col)}
-                                                />
+                                            <th key={col} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}>
+                                                <div className="flex items-center justify-between gap-1 w-full overflow-hidden cursor-grab active:cursor-grabbing"><span className="truncate" title={col}>{col}</span><GripVertical size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" /></div>
+                                                <div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} />
                                             </th>
                                         ))}
                                     </tr>
@@ -596,11 +613,7 @@ const Dashboard = ({ user, config, onLogout }) => {
                                         <tr key={rIdx} className="hover:bg-slate-50">
                                             <td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{rIdx + 1}</td>
                                             {resultState.visibleCols.map((col, cIdx) => (
-                                                <td key={`${rIdx}-${col}`} 
-                                                    onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)}
-                                                    className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>
-                                                    {formatValue(row[col])}
-                                                </td>
+                                                <td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>
                                             ))}
                                         </tr>
                                     ))}
@@ -612,14 +625,15 @@ const Dashboard = ({ user, config, onLogout }) => {
             </div>
         </div>
       </main>
+      
+      {/* POPUP CHỌN CỘT */}
+      <ColumnSelectorModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} columns={allColumns} onSelect={handleColumnSelect} />
     </div>
   );
 };
 
-// --- COMPONENT PHÂN TÍCH ---
 const OnDemandAnalytics = ({ data }) => {
     const [activeCharts, setActiveCharts] = useState([]);
-    
     const stats = useMemo(() => {
         if (data.length === 0) return {};
         const keys = Object.keys(data[0]);
@@ -635,7 +649,6 @@ const OnDemandAnalytics = ({ data }) => {
         const colCourse = findKey('Khoá') || findKey('Khóa đào tạo');
 
         const counts = { class: {}, status: {}, gender: {}, method: {}, area: {}, party: {}, major: {}, course: {} };
-
         data.forEach(item => {
             counts.class[item[colClass] || 'Khác'] = (counts.class[item[colClass] || 'Khác'] || 0) + 1;
             counts.major[item[colMajor] || 'Khác'] = (counts.major[item[colMajor] || 'Khác'] || 0) + 1;
@@ -644,23 +657,12 @@ const OnDemandAnalytics = ({ data }) => {
             if(colMethod) counts.method[item[colMethod] || 'N/A'] = (counts.method[item[colMethod] || 'N/A'] || 0) + 1;
             if(colArea) counts.area[item[colArea] || 'N/A'] = (counts.area[item[colArea] || 'N/A'] || 0) + 1;
             if(colCourse) counts.course[item[colCourse] || 'N/A'] = (counts.course[item[colCourse] || 'N/A'] || 0) + 1;
-            if(colParty) {
-                const isMember = item[colParty] && item[colParty].trim().length > 4 ? 'Đảng viên' : 'Quần chúng';
-                counts.party[isMember] = (counts.party[isMember] || 0) + 1;
-            }
+            if(colParty) { const isMember = item[colParty] && item[colParty].trim().length > 4 ? 'Đảng viên' : 'Quần chúng'; counts.party[isMember] = (counts.party[isMember] || 0) + 1; }
         });
-
         const toArr = (obj) => Object.entries(obj).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
-
         return {
-            class: toArr(counts.class).slice(0, 15), 
-            major: toArr(counts.major),
-            status: toArr(counts.status),
-            gender: toArr(counts.gender),
-            method: toArr(counts.method),
-            area: toArr(counts.area),
-            party: toArr(counts.party),
-            course: toArr(counts.course),
+            class: toArr(counts.class).slice(0, 15), major: toArr(counts.major), status: toArr(counts.status), gender: toArr(counts.gender),
+            method: toArr(counts.method), area: toArr(counts.area), party: toArr(counts.party), course: toArr(counts.course),
             hasCol: { status: !!colStatus, gender: !!colGender, method: !!colMethod, area: !!colArea, party: !!colParty, course: !!colCourse }
         };
     }, [data]);
@@ -680,53 +682,8 @@ const OnDemandAnalytics = ({ data }) => {
 
     return (
         <div className="h-full overflow-y-auto p-4 md:p-6 bg-slate-50">
-            <div className="mb-6">
-                <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">Thêm biểu đồ</h3>
-                <div className="flex flex-wrap gap-2">
-                    {CHART_CONFIG.filter(c => c.show).map(opt => (
-                        <button key={opt.id} onClick={() => toggleChart(opt.id)}
-                            className={`px-3 py-2 rounded-full text-xs md:text-sm font-medium border transition-all flex items-center gap-2
-                                ${activeCharts.includes(opt.id) ? 'bg-blue-900 text-white border-blue-900 shadow-md' : 'bg-white text-slate-600 border-slate-300'}`}>
-                            {activeCharts.includes(opt.id) ? <Check size={14} /> : <Plus size={14} />} {opt.label}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-10">
-                <AnimatePresence>
-                    {activeCharts.map(chartId => {
-                        const config = CHART_CONFIG.find(c => c.id === chartId);
-                        const chartData = stats[chartId];
-                        if (!config || !chartData) return null;
-                        return (
-                            <motion.div key={chartId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col relative group">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h4 className="font-bold text-blue-900 text-sm md:text-base">{config.label}</h4>
-                                    <button onClick={() => toggleChart(chartId)} className="text-slate-300 hover:text-red-500"><X size={18} /></button>
-                                </div>
-                                <div className="flex-1 min-h-0 text-xs">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        {config.type === 'pie' ? (
-                                            <PieChart>
-                                                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{chartData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie>
-                                                <RechartsTooltip /><Legend />
-                                            </PieChart>
-                                        ) : (
-                                            <BarChart data={chartData} layout={chartData.length > 8 ? 'vertical' : 'horizontal'}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                                {chartData.length > 8 ? <XAxis type="number"/> : <XAxis dataKey="name" interval={0} angle={-15} textAnchor="end" height={60}/>}
-                                                {chartData.length > 8 ? <YAxis dataKey="name" type="category" width={100}/> : <YAxis />}
-                                                <RechartsTooltip cursor={{fill: '#f0f9ff'}} /><Bar dataKey="value" fill="#003366" radius={[4, 4, 0, 0]} name="Số lượng" />
-                                            </BarChart>
-                                        )}
-                                    </ResponsiveContainer>
-                                </div>
-                            </motion.div>
-                        );
-                    })}
-                </AnimatePresence>
-            </div>
+            <div className="mb-6"><h3 className="text-sm font-bold text-slate-500 uppercase mb-3">Thêm biểu đồ</h3><div className="flex flex-wrap gap-2">{CHART_CONFIG.filter(c => c.show).map(opt => (<button key={opt.id} onClick={() => toggleChart(opt.id)} className={`px-3 py-2 rounded-full text-xs md:text-sm font-medium border transition-all flex items-center gap-2 ${activeCharts.includes(opt.id) ? 'bg-blue-900 text-white border-blue-900 shadow-md' : 'bg-white text-slate-600 border-slate-300'}`}>{activeCharts.includes(opt.id) ? <Check size={14} /> : <Plus size={14} />} {opt.label}</button>))}</div></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-10"><AnimatePresence>{activeCharts.map(chartId => { const config = CHART_CONFIG.find(c => c.id === chartId); const chartData = stats[chartId]; if (!config || !chartData) return null; return (<motion.div key={chartId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col relative group"><div className="flex justify-between items-center mb-4"><h4 className="font-bold text-blue-900 text-sm md:text-base">{config.label}</h4><button onClick={() => toggleChart(chartId)} className="text-slate-300 hover:text-red-500"><X size={18} /></button></div><div className="flex-1 min-h-0 text-xs"><ResponsiveContainer width="100%" height="100%">{config.type === 'pie' ? (<PieChart><Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{chartData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><RechartsTooltip /><Legend /></PieChart>) : (<BarChart data={chartData} layout={chartData.length > 8 ? 'vertical' : 'horizontal'}><CartesianGrid strokeDasharray="3 3" vertical={false} />{chartData.length > 8 ? <XAxis type="number"/> : <XAxis dataKey="name" interval={0} angle={-15} textAnchor="end" height={60}/>}{chartData.length > 8 ? <YAxis dataKey="name" type="category" width={100}/> : <YAxis />}<RechartsTooltip cursor={{fill: '#f0f9ff'}} /><Bar dataKey="value" fill="#003366" radius={[4, 4, 0, 0]} name="Số lượng" /></BarChart>)}</ResponsiveContainer></div></motion.div>); })}</AnimatePresence></div>
         </div>
     );
 };
@@ -734,11 +691,27 @@ const OnDemandAnalytics = ({ data }) => {
 export default function App() {
   const [user, setUser] = useState(null);
   const [sheetConfig, setSheetConfig] = useState(null);
+
+  // Check login session khi vào App
+  useEffect(() => {
+      const savedUser = localStorage.getItem('pka_user_session');
+      if (savedUser) setUser(JSON.parse(savedUser));
+  }, []);
+
   const handleLoginSuccess = (u) => setUser(u);
   const handleConfig = (id, range) => setSheetConfig({ id, range });
-  const handleLogout = () => { setUser(null); setSheetConfig(null); };
+  
+  // Đăng xuất: Xóa hết session
+  const handleLogout = () => { 
+      setUser(null); 
+      setSheetConfig(null);
+      localStorage.removeItem('pka_user_session');
+  };
+  
+  // Đổi nguồn: Chỉ xóa config, giữ user
+  const handleChangeSource = () => setSheetConfig(null);
 
   if (!user) return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
   if (!sheetConfig) return <SetupScreen onConfig={handleConfig} />;
-  return <Dashboard user={user} config={sheetConfig} onLogout={handleLogout} />;
+  return <Dashboard user={user} config={sheetConfig} onLogout={handleLogout} onChangeSource={handleChangeSource} />;
 }
