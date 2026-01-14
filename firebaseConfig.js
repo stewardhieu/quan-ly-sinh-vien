@@ -1,8 +1,7 @@
-// src/firebaseConfig.js
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-// --- CẤU HÌNH ---
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -14,5 +13,13 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
+
+// Cấu hình Google Provider chuẩn xác tại đây
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope("https://www.googleapis.com/auth/spreadsheets.readonly");
+googleProvider.addScope("https://www.googleapis.com/auth/userinfo.profile");
+googleProvider.setCustomParameters({
+  prompt: 'consent', // Ép buộc hỏi quyền để luôn lấy được token mới
+  access_type: 'offline'
+});
