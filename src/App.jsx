@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useGoogleLogin } from '@react-oauth/google'; // Thư viện mới
-import axios from 'axios'; // Dùng để lấy info user
+import { useGoogleLogin } from '@react-oauth/google';
+import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend
@@ -11,10 +11,9 @@ import {
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
-// API Key vẫn dùng để đọc Sheet, Token dùng để xác thực
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
 
-// --- UTILS (Giữ nguyên) ---
+// --- UTILS ---
 const formatValue = (value) => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'object') return JSON.stringify(value);
@@ -69,18 +68,13 @@ const exportToExcelXML = (data, columns, filename) => {
 
 const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
-
-  // Hook đăng nhập mới của Google
   const login = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setLoading(true);
       try {
-        // 1. Lấy thông tin User
         const userInfo = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
         });
-
-        // 2. Trả về thông tin user + Access Token để dùng cho Sheet API
         onLoginSuccess({
             name: userInfo.data.name,
             email: userInfo.data.email,
@@ -97,7 +91,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
       console.error("Login Failed:", error);
       alert("Đăng nhập thất bại. Vui lòng kiểm tra console.");
     },
-    scope: "https://www.googleapis.com/auth/spreadsheets.readonly", // Xin quyền đọc Sheet ngay lúc đăng nhập
+    scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
   });
 
   return (
@@ -131,7 +125,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
 const SetupScreen = ({ onConfig }) => {
   const [sheetId, setSheetId] = useState(localStorage.getItem('sheet_id') || '');
   const [range, setRange] = useState(localStorage.getItem('sheet_range') || 'Sheet1!A:Z');
-  
   const handleSubmit = (e) => {
     e.preventDefault();
     localStorage.setItem('sheet_id', sheetId);
@@ -181,33 +174,23 @@ const Dashboard = ({ user, config, onLogout }) => {
   const [view, setView] = useState('table');
   const tableRef = useRef(null);
 
-  // --- LOGIC LẤY DỮ LIỆU TỪ GOOGLE SHEET (DÙNG AXIOS & TOKEN MỚI) ---
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-        // Gọi API trực tiếp qua REST thay vì thư viện gapi cũ
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${API_KEY}`;
-        
         const response = await axios.get(url, {
-            headers: {
-                // Sử dụng Access Token từ lúc đăng nhập để xác thực quyền
-                Authorization: `Bearer ${user.accessToken}`
-            }
+            headers: { Authorization: `Bearer ${user.accessToken}` }
         });
-
         const result = response.data;
         const rows = result.values;
-
         if (!rows || rows.length === 0) {
             setLoadError("Không tìm thấy dữ liệu trong vùng đã chọn.");
             setLoading(false);
             return;
         }
-
         const headers = rows[0]; 
         const dataRows = rows.slice(1);
-
         const formattedData = dataRows.map((row, index) => {
             const rowObject = { 'STT': index + 1 };
             headers.forEach((header, i) => {
@@ -215,27 +198,19 @@ const Dashboard = ({ user, config, onLogout }) => {
             });
             return rowObject;
         });
-
         setRawData(formattedData);
         setAllColumns(headers); 
         setQueryConfig(prev => ({ ...prev, selectedCols: headers.slice(0, 5) }));
-
     } catch (error) {
         console.error("Lỗi tải Sheet:", error);
-        setLoadError(
-            error.response?.status === 403 
-            ? "Bạn không có quyền truy cập file này. Hãy chắc chắn bạn đã Share file cho email đang đăng nhập." 
-            : "Lỗi kết nối! Kiểm tra lại ID Sheet hoặc Mạng."
-        );
+        setLoadError(error.response?.status === 403 ? "Bạn không có quyền truy cập file này." : "Lỗi kết nối! Kiểm tra lại ID Sheet hoặc Mạng.");
     }
     setLoading(false);
   }, [config, user.accessToken]);
 
-  useEffect(() => {
-    fetchGoogleSheetData();
-  }, [fetchGoogleSheetData]);
+  useEffect(() => { fetchGoogleSheetData(); }, [fetchGoogleSheetData]);
 
-  // --- CÁC HÀM XỬ LÝ GIAO DIỆN (GIỮ NGUYÊN) ---
+  // --- UI HANDLERS ---
   useEffect(() => {
     const handleWindowMouseUp = () => { if (selection.isDragging) setSelection(prev => ({ ...prev, isDragging: false })); };
     window.addEventListener('mouseup', handleWindowMouseUp);
@@ -249,15 +224,11 @@ const Dashboard = ({ user, config, onLogout }) => {
   const runQuery = () => {
     setHistory(prev => ({ past: [...prev.past, { config: { ...queryConfig }, result: { ...resultState } }], future: [] }));
     let filtered = [...rawData];
-
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const lookupValues = new Set(queryConfig.bulkFilter.values.split(/[\n,]+/).map(s => s.trim().toLowerCase()).filter(s => s !== ''));
-      if (lookupValues.size > 0) {
-        filtered = filtered.filter(row => lookupValues.has(String(row[targetCol]).toLowerCase()));
-      }
+      if (lookupValues.size > 0) filtered = filtered.filter(row => lookupValues.has(String(row[targetCol]).toLowerCase()));
     }
-
     queryConfig.filters.forEach(filter => {
         if (filter.column && filter.value) {
             const lowerVal = filter.value.toLowerCase();
@@ -270,12 +241,7 @@ const Dashboard = ({ user, config, onLogout }) => {
             });
         }
     });
-
-    setResultState({
-      data: filtered,
-      visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns,
-      isExecuted: true
-    });
+    setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
     setSelection({ start: {row: null, col: null}, end: {row: null, col: null}, isDragging: false });
     setView('table');
   };
@@ -286,23 +252,19 @@ const Dashboard = ({ user, config, onLogout }) => {
     setHistory({ past: history.past.slice(0, -1), future: [{ config: { ...queryConfig }, result: { ...resultState } }, ...history.future] });
     setQueryConfig(previous.config); setResultState(previous.result);
   };
-
   const handleRedo = () => {
     if (history.future.length === 0) return;
     const next = history.future[0];
     setHistory({ past: [...history.past, { config: { ...queryConfig }, result: { ...resultState } }], future: history.future.slice(1) });
     setQueryConfig(next.config); setResultState(next.result);
   };
-
   const handleMouseDown = (rIdx, cIdx) => setSelection({ start: { row: rIdx, col: cIdx }, end: { row: rIdx, col: cIdx }, isDragging: true });
   const handleMouseEnter = (rIdx, cIdx) => { if (selection.isDragging) setSelection(prev => ({ ...prev, end: { row: rIdx, col: cIdx } })); };
-  
   const getSelectionRange = useCallback(() => {
     const { start, end } = selection;
     if (start.row === null) return null;
     return { minR: Math.min(start.row, end.row), maxR: Math.max(start.row, end.row), minC: Math.min(start.col, end.col), maxC: Math.max(start.col, end.col) };
   }, [selection]);
-
   const handleCopy = useCallback(() => {
     const range = getSelectionRange();
     if (!range || !resultState.data.length) return;
@@ -322,7 +284,6 @@ const Dashboard = ({ user, config, onLogout }) => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleCopy]);
-
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
 
   return (
@@ -359,12 +320,9 @@ const Dashboard = ({ user, config, onLogout }) => {
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col gap-4">
             <div className="flex justify-between items-end border-b border-slate-100 pb-2">
                  <h2 className="text-lg font-bold text-blue-900 flex items-center gap-2"><Filter size={20} /> Query Builder</h2>
-                 <span className="text-xs text-slate-500">
-                    {loading ? 'Đang tải dữ liệu...' : `Dữ liệu gốc: ${rawData.length} dòng`}
-                 </span>
+                 <span className="text-xs text-slate-500">{loading ? 'Đang tải dữ liệu...' : `Dữ liệu gốc: ${rawData.length} dòng`}</span>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Cột 1: Chọn trường hiển thị */}
                 <div className="lg:col-span-3 border-r border-slate-100 pr-4 flex flex-col gap-2">
                     <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><List size={16} /> 1. Chọn cột hiển thị</label>
                     <div className="flex gap-2 text-xs mb-1">
@@ -383,7 +341,6 @@ const Dashboard = ({ user, config, onLogout }) => {
                     </div>
                 </div>
 
-                {/* Cột 2: Bộ lọc */}
                 <div className="lg:col-span-6 flex flex-col gap-4 px-2">
                     <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><Settings size={16} /> 2. Thiết lập điều kiện</label>
                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
@@ -394,8 +351,7 @@ const Dashboard = ({ user, config, onLogout }) => {
                                 <option value="">-- Cột đối chiếu --</option>
                                 {allColumns.map(c => <option key={c} value={c}>{c}</option>)}
                              </select>
-                             <input type="text" className="flex-1 border border-slate-300 rounded px-2 text-sm" 
-                                placeholder="Paste danh sách mã SV, SĐT..."
+                             <input type="text" className="flex-1 border border-slate-300 rounded px-2 text-sm" placeholder="Paste danh sách mã SV, SĐT..."
                                 value={queryConfig.bulkFilter.values} onChange={(e) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, values: e.target.value } }))} />
                         </div>
                     </div>
@@ -425,7 +381,6 @@ const Dashboard = ({ user, config, onLogout }) => {
                     </div>
                 </div>
 
-                {/* Cột 3: Nút Chạy */}
                 <div className="lg:col-span-3 border-l border-slate-100 pl-4 flex flex-col justify-end pb-1">
                     <button onClick={runQuery} disabled={loading} className="w-full py-3 bg-blue-900 hover:bg-blue-800 disabled:bg-slate-300 text-white rounded-lg shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95">
                         {loading ? <RefreshCw className="animate-spin" /> : <Play size={20} fill="currentColor" />}
@@ -435,7 +390,6 @@ const Dashboard = ({ user, config, onLogout }) => {
             </div>
         </div>
 
-        {/* --- PHẦN KẾT QUẢ --- */}
         <div className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
             <div className="flex justify-between items-center px-4 pt-2 border-b border-slate-200 bg-slate-50">
                  <div className="flex gap-2">
@@ -495,58 +449,141 @@ const Dashboard = ({ user, config, onLogout }) => {
   );
 };
 
+// --- COMPONENT PHÂN TÍCH MỚI (ĐÃ CẬP NHẬT) ---
 const OnDemandAnalytics = ({ data }) => {
     const [activeCharts, setActiveCharts] = useState([]);
     
-    // Tự động detect cột nào là Ngành, Lớp dựa trên tên cột
+    // Logic tính toán thống kê dựa trên dữ liệu thật
     const stats = useMemo(() => {
         if (data.length === 0) return {};
         const firstRow = data[0];
         const keys = Object.keys(firstRow);
-        
-        // Tìm cột có tên chứa từ khóa
-        const colClass = keys.find(k => k.toLowerCase().includes('lớp')) || keys[1];
-        const colMajor = keys.find(k => k.toLowerCase().includes('ngành') || k.toLowerCase().includes('khoa')) || keys[2];
 
-        const counts = { class: {}, major: {} };
+        // Hàm tìm cột linh hoạt (không phân biệt hoa thường)
+        const findKey = (keyword) => keys.find(k => k.toLowerCase().includes(keyword.toLowerCase()));
+
+        // Tự động map các cột dữ liệu quan trọng
+        const colClass = findKey('Lớp') || keys[1];
+        const colStatus = findKey('Trạng thái') || findKey('Status');
+        const colGender = findKey('Giới tính') || findKey('Phái');
+        const colMethod = findKey('Hình thức xét tuyển') || findKey('Xét tuyển');
+        const colArea = findKey('Khu vực') || findKey('KV');
+        const colParty = findKey('Ngày kết nạp Đảng') || findKey('Ngày vào Đảng');
+        const colMajor = findKey('Ngành') || findKey('Chương trình') || keys[2];
+        const colCourse = findKey('Khoá') || findKey('Khóa đào tạo');
+
+        const counts = { 
+            class: {}, status: {}, gender: {}, method: {}, area: {}, party: {}, major: {}, course: {} 
+        };
+
         data.forEach(item => {
-            const c = item[colClass] || 'Khác';
-            const m = item[colMajor] || 'Khác';
-            counts.class[c] = (counts.class[c] || 0) + 1;
-            counts.major[m] = (counts.major[m] || 0) + 1;
+            counts.class[item[colClass] || 'Khác'] = (counts.class[item[colClass] || 'Khác'] || 0) + 1;
+            counts.major[item[colMajor] || 'Khác'] = (counts.major[item[colMajor] || 'Khác'] || 0) + 1;
+            if(colStatus) counts.status[item[colStatus] || 'N/A'] = (counts.status[item[colStatus] || 'N/A'] || 0) + 1;
+            if(colGender) counts.gender[item[colGender] || 'N/A'] = (counts.gender[item[colGender] || 'N/A'] || 0) + 1;
+            if(colMethod) counts.method[item[colMethod] || 'N/A'] = (counts.method[item[colMethod] || 'N/A'] || 0) + 1;
+            if(colArea) counts.area[item[colArea] || 'N/A'] = (counts.area[item[colArea] || 'N/A'] || 0) + 1;
+            if(colCourse) counts.course[item[colCourse] || 'N/A'] = (counts.course[item[colCourse] || 'N/A'] || 0) + 1;
+            
+            // Logic Đảng viên: Nếu có ngày nhập -> Là Đảng viên
+            if(colParty) {
+                const isMember = item[colParty] && item[colParty].trim().length > 4 ? 'Đảng viên' : 'Quần chúng';
+                counts.party[isMember] = (counts.party[isMember] || 0) + 1;
+            }
         });
 
+        // Hàm chuyển đổi object thành array cho Recharts
+        const toArr = (obj) => Object.entries(obj).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
+
         return {
-            class: Object.entries(counts.class).map(([name, value]) => ({ name, value })),
-            major: Object.entries(counts.major).map(([name, value]) => ({ name, value })),
+            class: toArr(counts.class).slice(0, 15), // Chỉ lấy Top 15 lớp đông nhất
+            major: toArr(counts.major),
+            status: toArr(counts.status),
+            gender: toArr(counts.gender),
+            method: toArr(counts.method),
+            area: toArr(counts.area),
+            party: toArr(counts.party),
+            course: toArr(counts.course),
+            hasCol: { status: !!colStatus, gender: !!colGender, method: !!colMethod, area: !!colArea, party: !!colParty, course: !!colCourse }
         };
     }, [data]);
 
     const toggleChart = (id) => setActiveCharts(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
-    const COLORS = ['#003366', '#0055AA', '#0077EE', '#4499FF', '#88BBFF'];
+    const COLORS = ['#003366', '#0055AA', '#0077EE', '#4499FF', '#88BBFF', '#CCDDEE', '#FFBB28', '#FF8042'];
+
+    const CHART_CONFIG = [
+        { id: 'status', label: 'Trạng thái Sinh viên', type: 'pie', show: stats.hasCol?.status },
+        { id: 'gender', label: 'Cơ cấu Giới tính', type: 'pie', show: stats.hasCol?.gender },
+        { id: 'method', label: 'Hình thức Xét tuyển', type: 'bar', show: stats.hasCol?.method },
+        { id: 'area', label: 'Khu vực Ưu tiên', type: 'bar', show: stats.hasCol?.area },
+        { id: 'party', label: 'Tỉ lệ Đảng viên', type: 'pie', show: stats.hasCol?.party },
+        { id: 'course', label: 'Quy mô Khóa đào tạo', type: 'bar', show: stats.hasCol?.course },
+        { id: 'major', label: 'Phân bố theo Ngành', type: 'pie', show: true },
+        { id: 'class', label: 'Top Lớp đông nhất', type: 'bar', show: true },
+    ];
 
     return (
         <div className="h-full overflow-y-auto p-6 bg-slate-50">
-            <div className="mb-6 flex gap-2">
-                <button onClick={() => toggleChart('major')} className={`px-3 py-2 rounded-full text-sm border ${activeCharts.includes('major') ? 'bg-blue-900 text-white' : 'bg-white'}`}>+ Biểu đồ Ngành</button>
-                <button onClick={() => toggleChart('class')} className={`px-3 py-2 rounded-full text-sm border ${activeCharts.includes('class') ? 'bg-blue-900 text-white' : 'bg-white'}`}>+ Biểu đồ Lớp</button>
+            <div className="mb-6">
+                <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">Thêm biểu đồ vào Báo cáo</h3>
+                <div className="flex flex-wrap gap-2">
+                    {CHART_CONFIG.filter(c => c.show).map(opt => (
+                        <button key={opt.id} onClick={() => toggleChart(opt.id)}
+                            className={`px-3 py-2 rounded-full text-sm font-medium border transition-all flex items-center gap-2
+                                ${activeCharts.includes(opt.id) ? 'bg-blue-900 text-white border-blue-900 shadow-md' : 'bg-white text-slate-600 border-slate-300 hover:border-blue-900 hover:text-blue-900'}`}>
+                            {activeCharts.includes(opt.id) ? <Check size={14} /> : <Plus size={14} />} {opt.label}
+                        </button>
+                    ))}
+                </div>
             </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-10">
                 <AnimatePresence>
-                    {activeCharts.includes('major') && (
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="bg-white p-4 rounded-xl shadow h-80">
-                            <h4 className="font-bold text-blue-900 mb-2">Tỉ lệ theo Ngành</h4>
-                            <ResponsiveContainer><PieChart><Pie data={stats.major} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{stats.major.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><RechartsTooltip /><Legend /></PieChart></ResponsiveContainer>
-                        </motion.div>
-                    )}
-                    {activeCharts.includes('class') && (
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="bg-white p-4 rounded-xl shadow h-80">
-                             <h4 className="font-bold text-blue-900 mb-2">Số lượng theo Lớp</h4>
-                             <ResponsiveContainer><BarChart data={stats.class}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis /><RechartsTooltip /><Bar dataKey="value" fill="#003366" /></BarChart></ResponsiveContainer>
-                        </motion.div>
-                    )}
+                    {activeCharts.map(chartId => {
+                        const config = CHART_CONFIG.find(c => c.id === chartId);
+                        const chartData = stats[chartId];
+                        if (!config || !chartData) return null;
+
+                        return (
+                            <motion.div key={chartId} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                                className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col relative group">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h4 className="font-bold text-blue-900">{config.label}</h4>
+                                    <button onClick={() => toggleChart(chartId)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X size={18} /></button>
+                                </div>
+                                <div className="flex-1 min-h-0 text-xs">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        {config.type === 'pie' ? (
+                                            <PieChart>
+                                                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                                                    {chartData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                                                </Pie>
+                                                <RechartsTooltip />
+                                                <Legend />
+                                            </PieChart>
+                                        ) : (
+                                            <BarChart data={chartData} layout={chartData.length > 8 ? 'vertical' : 'horizontal'}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                {chartData.length > 8 ? <XAxis type="number"/> : <XAxis dataKey="name" interval={0} angle={-15} textAnchor="end" height={60}/>}
+                                                {chartData.length > 8 ? <YAxis dataKey="name" type="category" width={100}/> : <YAxis />}
+                                                <RechartsTooltip cursor={{fill: '#f0f9ff'}} />
+                                                <Bar dataKey="value" fill="#003366" radius={[4, 4, 0, 0]} name="Số lượng" />
+                                            </BarChart>
+                                        )}
+                                    </ResponsiveContainer>
+                                </div>
+                            </motion.div>
+                        );
+                    })}
                 </AnimatePresence>
             </div>
+            
+            {activeCharts.length === 0 && (
+                <div className="text-center py-20 border-2 border-dashed border-slate-300 rounded-xl bg-slate-100">
+                    <p className="text-slate-500 font-medium">Chưa có biểu đồ nào được chọn</p>
+                    <p className="text-slate-400 text-sm mt-1">Vui lòng chọn các mục ở trên để hiển thị phân tích</p>
+                </div>
+            )}
         </div>
     );
 };
