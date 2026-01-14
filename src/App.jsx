@@ -1,38 +1,19 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-// FIREBASE IMPORTS
-import { initializeApp } from "firebase/app";
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
-
+import { useGoogleLogin } from '@react-oauth/google'; // Dùng thư viện Google OAuth thuần
+import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-// Import thêm các biểu đồ mới cho Dashboard
 import { 
   PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
-  Settings, LogOut, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
+  Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const googleProvider = new GoogleAuthProvider();
-
-googleProvider.addScope("https://www.googleapis.com/auth/spreadsheets.readonly");
-googleProvider.setCustomParameters({ prompt: 'consent' }); 
+const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
 
 // --- UTILS ---
 const formatValue = (value) => {
@@ -79,6 +60,7 @@ const exportToExcelXML = (data, columns, filename) => {
   document.body.removeChild(link);
 };
 
+// --- COMPONENT: POPUP CHỌN CỘT ---
 const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Chọn cột dữ liệu" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const inputRef = useRef(null);
@@ -96,21 +78,35 @@ const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Ch�
     );
 };
 
-// --- LOGIN ---
-const LoginScreen = () => {
+// --- MAIN COMPONENTS ---
+
+const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
-  const handleLogin = async () => {
-    setLoading(true);
-    try {
-        const result = await signInWithPopup(auth, googleProvider);
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        const token = credential?.accessToken;
-        if (token) localStorage.setItem('pka_google_sheet_token', token);
-    } catch (error) {
-        console.error("Login Error:", error);
-        alert(`Lỗi đăng nhập: ${error.message}`);
-    } finally { setLoading(false); }
-  };
+  const login = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      setLoading(true);
+      try {
+        const userInfo = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+        });
+        const userData = {
+            name: userInfo.data.name,
+            email: userInfo.data.email,
+            imageUrl: userInfo.data.picture,
+            accessToken: tokenResponse.access_token 
+        };
+        // Lưu session vào localStorage (Thay cho Firebase)
+        localStorage.setItem('pka_user_session', JSON.stringify(userData));
+        onLoginSuccess(userData);
+      } catch (error) {
+        console.error("Lỗi lấy thông tin user:", error);
+        alert("Đăng nhập thành công nhưng không lấy được thông tin.");
+      }
+      setLoading(false);
+    },
+    onError: (error) => { console.error("Login Failed:", error); alert("Đăng nhập thất bại."); },
+    scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
+  });
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-800 font-sans px-4">
@@ -120,7 +116,7 @@ const LoginScreen = () => {
           <h1 className="text-2xl font-bold text-blue-900 uppercase tracking-wide">PKA Management</h1>
           <p className="text-slate-500 text-sm mt-2">Trường Kỹ thuật Phenikaa</p>
         </div>
-        <button onClick={handleLogin} disabled={loading} className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-300 rounded-lg hover:bg-slate-50 transition-all group">
+        <button onClick={() => login()} disabled={loading} className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-300 rounded-lg hover:bg-slate-50 transition-all group">
             {loading ? <RefreshCw className="animate-spin w-5 h-5 text-blue-900"/> : (<svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.11c-.22-.66-.35-1.36-.35-2.11s.13-1.45.35-2.11V7.05H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.95l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.05l3.66 2.84c.87-2.6 3.3-4.51 6.16-4.51z" fill="#EA4335"/></svg>)}
             <span className="font-medium text-slate-700 group-hover:text-blue-900">{loading ? 'Đang kết nối...' : 'Đăng nhập bằng Google'}</span>
         </button>
@@ -129,43 +125,33 @@ const LoginScreen = () => {
   );
 };
 
-// --- SETUP SCREEN ---
-const SetupScreen = ({ user, onConfig }) => {
-  const [sheetId, setSheetId] = useState('');
-  const [range, setRange] = useState('Sheet1!A:Z');
+const SetupScreen = ({ onConfig }) => {
+  const [sheetId, setSheetId] = useState(localStorage.getItem('last_sheet_id') || '');
+  const [range, setRange] = useState(localStorage.getItem('last_sheet_range') || 'Sheet1!A:Z');
   const [history, setHistory] = useState([]);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
   useEffect(() => {
-    const loadHistory = async () => {
-        if (!user) return;
-        try {
-            const docRef = doc(db, "users", user.uid);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists() && docSnap.data().history) {
-                const saved = docSnap.data().history;
-                setHistory(saved);
-                if (saved.length > 0) { setSheetId(saved[0].id); setRange(saved[0].range); }
-            }
-        } catch (err) { console.error("Lỗi tải lịch sử:", err); }
-        setIsLoadingHistory(false);
-    };
-    loadHistory();
-  }, [user]);
+      const savedHistory = JSON.parse(localStorage.getItem('sheet_history') || '[]');
+      setHistory(savedHistory);
+  }, []);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    const newEntry = { id: sheetId, range: range, date: new Date().toLocaleDateString('vi-VN') };
-    const newHistory = [newEntry, ...history.filter(h => h.id !== sheetId)].slice(0, 5);
-    try { await setDoc(doc(db, "users", user.uid), { history: newHistory }, { merge: true }); } catch (e) { console.error(e); }
+    const newHistory = [{ id: sheetId, range: range, date: new Date().toLocaleDateString('vi-VN') }, ...history.filter(h => h.id !== sheetId)].slice(0, 5);
+    localStorage.setItem('sheet_history', JSON.stringify(newHistory));
+    localStorage.setItem('last_sheet_id', sheetId);
+    localStorage.setItem('last_sheet_range', range);
     onConfig(sheetId, range);
   };
 
-  const deleteHistoryItem = async (e, idToDelete) => {
+  const useHistoryItem = (item) => { setSheetId(item.id); setRange(item.range); };
+
+  // Hàm xóa lịch sử (Client-side)
+  const deleteHistoryItem = (e, idToDelete) => {
       e.stopPropagation();
-      const updatedHistory = history.filter(h => h.id !== idToDelete);
-      setHistory(updatedHistory);
-      try { await setDoc(doc(db, "users", user.uid), { history: updatedHistory }, { merge: true }); } catch (e) { console.error(e); }
+      const newHistory = history.filter(h => h.id !== idToDelete);
+      setHistory(newHistory);
+      localStorage.setItem('sheet_history', JSON.stringify(newHistory));
   };
 
   return (
@@ -175,19 +161,7 @@ const SetupScreen = ({ user, onConfig }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Spreadsheet ID</label><input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID của Google Sheet..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Data Range</label><input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="Ví dụ: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
-          <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> Đã dùng gần đây {isLoadingHistory && "(Đang đồng bộ...)"}</p>
-              <div className="space-y-2">
-                  {history.map((h, idx) => (
-                      <div key={idx} onClick={() => { setSheetId(h.id); setRange(h.range); }} className="group relative text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors">
-                          <div className="font-medium text-slate-700 truncate pr-6">{h.id}</div>
-                          <div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div>
-                          <button onClick={(e) => deleteHistoryItem(e, h.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
-                      </div>
-                  ))}
-                  {history.length === 0 && !isLoadingHistory && <p className="text-xs text-slate-300 italic">Chưa có lịch sử</p>}
-              </div>
-          </div>
+          {history.length > 0 && (<div className="mt-4 pt-4 border-t border-slate-100"><p className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> Gần đây</p><div className="space-y-2">{history.map((h, idx) => (<div key={idx} onClick={() => useHistoryItem(h)} className="group relative text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors"><div className="font-medium text-slate-700 truncate">{h.id}</div><div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div><button onClick={(e) => deleteHistoryItem(e, h.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button></div>))}</div></div>)}
           <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4"><Check className="w-4 h-4" /> Kết nối Dữ liệu</button>
         </form>
       </div>
@@ -195,14 +169,12 @@ const SetupScreen = ({ user, onConfig }) => {
   );
 };
 
-// --- DASHBOARD ---
 const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [rawData, setRawData] = useState([]);
   const [allColumns, setAllColumns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
-  // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 50;
 
@@ -222,24 +194,18 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [history, setHistory] = useState({ past: [], future: [] });
   const [view, setView] = useState('table');
   const [columnWidths, setColumnWidths] = useState({});
-  const resizingRef = useRef(null);
   const tableRef = useRef(null);
+  const resizingRef = useRef(null);
 
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true); setLoadError(null);
     try {
-        const token = localStorage.getItem('pka_google_sheet_token');
-        if (!token) throw new Error("TOKEN_MISSING");
-
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}`;
-        const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-        
-        if (response.status === 401 || response.status === 403) throw new Error("TOKEN_INVALID");
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-        
-        const result = await response.json();
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${API_KEY}`;
+        // Dùng token của Google OAuth (user.accessToken)
+        const response = await axios.get(url, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+        const result = response.data;
         const rows = result.values;
-        if (!rows || rows.length === 0) { setLoadError("Không tìm thấy dữ liệu."); setLoading(false); return; }
+        if (!rows || rows.length === 0) { setLoadError("Không tìm thấy dữ liệu trong vùng đã chọn."); setLoading(false); return; }
         
         const headers = rows[0]; 
         const dataRows = rows.slice(1);
@@ -253,16 +219,11 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         const initWidths = {}; headers.forEach(h => initWidths[h] = 150); setColumnWidths(initWidths);
 
     } catch (error) {
-        console.error("Fetch Error:", error);
-        if (error.message === "TOKEN_MISSING" || error.message === "TOKEN_INVALID") {
-            alert("Phiên làm việc hết hạn. Vui lòng đăng nhập lại.");
-            onLogout();
-        } else {
-            setLoadError(`Lỗi kết nối: ${error.message}`);
-        }
+        console.error("Lỗi tải Sheet:", error);
+        setLoadError(error.response?.status === 403 ? "Bạn không có quyền truy cập file này (Lỗi 403)." : "Lỗi kết nối! Kiểm tra lại ID Sheet hoặc Mạng.");
     }
     setLoading(false);
-  }, [config, onLogout]);
+  }, [config, user.accessToken]);
 
   useEffect(() => { fetchGoogleSheetData(); }, [fetchGoogleSheetData]);
 
@@ -271,6 +232,16 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       if (modalTarget.type === 'bulk') setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, column: colName } }));
       else if (modalTarget.type === 'filter') updateFilter(modalTarget.id, 'column', colName);
   };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => { if (resizingRef.current) { const { col, startX, startWidth } = resizingRef.current; setColumnWidths(prev => ({ ...prev, [col]: Math.max(50, startWidth + (e.clientX - startX)) })); }};
+    const handleMouseUp = () => { resizingRef.current = null; document.body.style.cursor = 'default'; };
+    document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
+    return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+  }, []);
+  const startResizing = (e, col) => { e.preventDefault(); e.stopPropagation(); resizingRef.current = { col, startX: e.clientX, startWidth: columnWidths[col] || 150 }; document.body.style.cursor = 'col-resize'; };
+  const handleDragStart = (e, ci) => e.dataTransfer.setData("colIndex", ci);
+  const handleDrop = (e, ti) => { const si = parseInt(e.dataTransfer.getData("colIndex")); if (si === ti) return; const nc = [...resultState.visibleCols]; const [mc] = nc.splice(si, 1); nc.splice(ti, 0, mc); setResultState(p => ({ ...p, visibleCols: nc })); };
 
   const addFilterCondition = () => setQueryConfig(prev => ({ ...prev, filters: [...prev.filters, { id: Date.now(), column: '', condition: 'contains', value: '', operator: 'AND' }] }));
   const removeFilterCondition = (id) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.filter(f => f.id !== id) }));
@@ -295,21 +266,12 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const runQuery = () => {
     setHistory(prev => ({ past: [...prev.past, { config: { ...queryConfig }, result: { ...resultState } }], future: [] }));
     let filtered = [...rawData];
-    
-    // BULK FILTER FIX
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,]+/); 
       const lookupValues = new Set(rawValues.map(s => s.trim().toLowerCase()).filter(s => s !== ''));
-      
-      if (lookupValues.size > 0) {
-          filtered = filtered.filter(row => {
-              const cellVal = String(row[targetCol]).trim().toLowerCase();
-              return lookupValues.has(cellVal);
-          });
-      }
+      if (lookupValues.size > 0) filtered = filtered.filter(row => lookupValues.has(String(row[targetCol]).trim().toLowerCase()));
     }
-
     filtered = filtered.filter(row => {
         let result = true; 
         queryConfig.filters.forEach((filter, index) => {
@@ -320,43 +282,22 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         });
         return result;
     });
-
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
-    setCurrentPage(1);
-    setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
+    setCurrentPage(1); setView('table'); 
+    if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
 
-  // RESIZE & UI
-  useEffect(() => {
-    const handleMouseMove = (e) => { if (resizingRef.current) { const { col, startX, startWidth } = resizingRef.current; setColumnWidths(prev => ({ ...prev, [col]: Math.max(50, startWidth + (e.clientX - startX)) })); }};
-    const handleMouseUp = () => { resizingRef.current = null; document.body.style.cursor = 'default'; };
-    document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
-    return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-  }, []);
-  const startResizing = (e, col) => { e.preventDefault(); e.stopPropagation(); resizingRef.current = { col, startX: e.clientX, startWidth: columnWidths[col] || 150 }; document.body.style.cursor = 'col-resize'; };
-  const handleDragStart = (e, ci) => e.dataTransfer.setData("colIndex", ci);
-  const handleDrop = (e, ti) => { const si = parseInt(e.dataTransfer.getData("colIndex")); if (si === ti) return; const nc = [...resultState.visibleCols]; const [mc] = nc.splice(si, 1); nc.splice(ti, 0, mc); setResultState(p => ({ ...p, visibleCols: nc })); };
   const handleUndo = () => { if (history.past.length === 0) return; const prev = history.past[history.past.length - 1]; setHistory({ past: history.past.slice(0, -1), future: [{ config: { ...queryConfig }, result: { ...resultState } }, ...history.future] }); setQueryConfig(prev.config); setResultState(prev.result); };
   const handleRedo = () => { if (history.future.length === 0) return; const next = history.future[0]; setHistory({ past: [...history.past, { config: { ...queryConfig }, result: { ...resultState } }], future: history.future.slice(1) }); setQueryConfig(next.config); setResultState(next.result); };
-  
   const handleMouseDown = (r, c) => setSelection({ start: { row: r, col: c }, end: { row: r, col: c }, isDragging: true });
   const handleMouseEnter = (r, c) => { if (selection.isDragging) setSelection(prev => ({ ...prev, end: { row: r, col: c } })); };
   useEffect(() => { const up = () => { if (selection.isDragging) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging]);
   const getSelectionRange = useCallback(() => { const { start, end } = selection; if (start.row === null) return null; return { minR: Math.min(start.row, end.row), maxR: Math.max(start.row, end.row), minC: Math.min(start.col, end.col), maxC: Math.max(start.col, end.col) }; }, [selection]);
-  const handleCopy = useCallback(() => { 
-      const rg = getSelectionRange(); if (!rg || !resultState.data.length) return; 
-      const pageData = resultState.data.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-      const rows = pageData.slice(rg.minR, rg.maxR + 1); const cols = resultState.visibleCols; 
-      const txt = rows.map(r => { const vals = []; for (let c = rg.minC; c <= rg.maxC; c++) vals.push(formatValue(r[cols[c]])); return vals.join('\t'); }).join('\n'); secureCopy(txt); 
-  }, [getSelectionRange, resultState, currentPage]);
+  const handleCopy = useCallback(() => { const rg = getSelectionRange(); if (!rg || !resultState.data.length) return; const pageData = resultState.data.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE); const rows = pageData.slice(rg.minR, rg.maxR + 1); const cols = resultState.visibleCols; const txt = rows.map(r => { const vals = []; for (let c = rg.minC; c <= rg.maxC; c++) vals.push(formatValue(r[cols[c]])); return vals.join('\t'); }).join('\n'); secureCopy(txt); }, [getSelectionRange, resultState, currentPage]);
   useEffect(() => { const kd = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'c') { e.preventDefault(); handleCopy(); } }; window.addEventListener('keydown', kd); return () => window.removeEventListener('keydown', kd); }, [handleCopy]);
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
-
-  const currentTableData = useMemo(() => {
-      const start = (currentPage - 1) * ITEMS_PER_PAGE;
-      return resultState.data.slice(start, start + ITEMS_PER_PAGE);
-  }, [resultState.data, currentPage]);
+  const currentTableData = useMemo(() => { const start = (currentPage - 1) * ITEMS_PER_PAGE; return resultState.data.slice(start, start + ITEMS_PER_PAGE); }, [resultState.data, currentPage]);
   const totalPages = Math.ceil(resultState.data.length / ITEMS_PER_PAGE);
 
   return (
@@ -367,7 +308,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
             <button onClick={onChangeSource} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200 transition-colors"><Database size={14} /> <span className="hidden md:inline">Đổi nguồn</span></button>
             <button onClick={() => fetchGoogleSheetData()} className="p-2 text-blue-700 bg-blue-50 rounded hover:bg-blue-100" title="Tải lại"><RefreshCw size={18} /></button>
             <div className="hidden md:flex items-center gap-2 bg-slate-50 rounded p-1"><button onClick={handleUndo} disabled={history.past.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Undo size={18} /></button><button onClick={handleRedo} disabled={history.future.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Redo size={18} /></button></div>
-            <div className="flex items-center gap-2">{user.photoURL && <img src={user.photoURL} alt="Avatar" className="w-8 h-8 rounded-full" />}<button onClick={onLogout} className="text-slate-400 hover:text-red-500 ml-2" title="Đăng xuất"><LogOut size={18} /></button></div>
+            <div className="flex items-center gap-2">{user.imageUrl && <img src={user.imageUrl} alt="Avatar" className="w-8 h-8 rounded-full" />}<button onClick={onLogout} className="text-slate-400 hover:text-red-500 ml-2" title="Đăng xuất"><LogOut size={18} /></button></div>
         </div>
       </header>
 
@@ -452,18 +393,17 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   );
 };
 
-// --- SUPER ANALYTICS DASHBOARD (New!) ---
+// --- SUPER ANALYTICS DASHBOARD ---
 const SuperAnalytics = ({ data }) => {
     if (!data || data.length === 0) return <div className="p-10 text-center text-slate-400">Không có dữ liệu để phân tích</div>;
 
     const [chartType, setChartType] = useState('bar');
     const [xAxisKey, setXAxisKey] = useState('');
-    const [yAxisKey, setYAxisKey] = useState('count'); // 'count' or specific numeric column
-    const [aggType, setAggType] = useState('count'); // count, sum, avg
+    const [yAxisKey, setYAxisKey] = useState('count');
+    const [aggType, setAggType] = useState('count');
 
     const columns = Object.keys(data[0]);
 
-    // Auto-detect good default Axis
     useEffect(() => {
         const potentialX = columns.find(c => ['Lớp', 'Ngành', 'Khoa', 'Trạng thái', 'Giới tính'].some(k => c.includes(k))) || columns[1];
         setXAxisKey(potentialX);
@@ -471,24 +411,17 @@ const SuperAnalytics = ({ data }) => {
 
     const processedData = useMemo(() => {
         if (!xAxisKey) return [];
-        
-        // 1. Group Data
         const grouped = data.reduce((acc, row) => {
             const key = row[xAxisKey] || 'N/A';
             if (!acc[key]) acc[key] = { name: key, count: 0, sum: 0, values: [] };
-            
             acc[key].count += 1;
             if (yAxisKey !== 'count') {
                 const val = parseFloat(row[yAxisKey]);
-                if (!isNaN(val)) {
-                    acc[key].sum += val;
-                    acc[key].values.push(val);
-                }
+                if (!isNaN(val)) { acc[key].sum += val; acc[key].values.push(val); }
             }
             return acc;
         }, {});
 
-        // 2. Aggregate
         return Object.values(grouped).map(item => {
             let value = item.count;
             if (yAxisKey !== 'count') {
@@ -496,14 +429,13 @@ const SuperAnalytics = ({ data }) => {
                 if (aggType === 'avg') value = item.values.length ? (item.sum / item.values.length).toFixed(2) : 0;
             }
             return { name: item.name, value: Number(value) };
-        }).sort((a, b) => b.value - a.value); // Sort descending
+        }).sort((a, b) => b.value - a.value);
     }, [data, xAxisKey, yAxisKey, aggType]);
 
     const COLORS = ['#003366', '#0055AA', '#0077EE', '#4499FF', '#88BBFF', '#FF8042', '#FFBB28'];
 
     const renderChart = () => {
         const CommonAxis = <><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis /><RechartsTooltip /><Legend /></>;
-        
         switch (chartType) {
             case 'line': return <LineChart data={processedData}>{CommonAxis}<Line type="monotone" dataKey="value" stroke="#003366" strokeWidth={2} /></LineChart>;
             case 'area': return <AreaChart data={processedData}>{CommonAxis}<Area type="monotone" dataKey="value" fill="#003366" stroke="#003366" /></AreaChart>;
@@ -514,67 +446,28 @@ const SuperAnalytics = ({ data }) => {
 
     return (
         <div className="h-full flex flex-col bg-slate-50">
-            {/* Dashboard Controls */}
             <div className="p-4 bg-white border-b border-slate-200 grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Loại biểu đồ</label>
                     <div className="flex bg-slate-100 p-1 rounded-lg">
                         {['bar', 'line', 'area', 'pie'].map(type => (
                             <button key={type} onClick={() => setChartType(type)} className={`flex-1 p-1 rounded ${chartType === type ? 'bg-white shadow text-blue-900' : 'text-slate-400 hover:text-slate-600'}`}>
-                                {type === 'bar' && <BarChart3 size={16} className="mx-auto"/>}
-                                {type === 'line' && <LineIcon size={16} className="mx-auto"/>}
-                                {type === 'area' && <Database size={16} className="mx-auto"/>}
-                                {type === 'pie' && <PieIcon size={16} className="mx-auto"/>}
+                                {type === 'bar' && <BarChart3 size={16} className="mx-auto"/>}{type === 'line' && <LineIcon size={16} className="mx-auto"/>}{type === 'area' && <Database size={16} className="mx-auto"/>}{type === 'pie' && <PieIcon size={16} className="mx-auto"/>}
                             </button>
                         ))}
                     </div>
                 </div>
-                <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Trục X (Nhóm theo)</label>
-                    <select className="w-full border border-slate-300 rounded px-2 py-1 text-sm" value={xAxisKey} onChange={e => setXAxisKey(e.target.value)}>
-                        {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                </div>
-                <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Trục Y (Giá trị)</label>
-                    <select className="w-full border border-slate-300 rounded px-2 py-1 text-sm" value={yAxisKey} onChange={e => setYAxisKey(e.target.value)}>
-                        <option value="count">Đếm số lượng bản ghi (Count)</option>
-                        {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                </div>
-                {yAxisKey !== 'count' && (
-                    <div>
-                        <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Phép tính</label>
-                        <select className="w-full border border-slate-300 rounded px-2 py-1 text-sm" value={aggType} onChange={e => setAggType(e.target.value)}>
-                            <option value="sum">Tổng (Sum)</option>
-                            <option value="avg">Trung bình (Average)</option>
-                        </select>
-                    </div>
-                )}
+                <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Trục X (Nhóm)</label><select className="w-full border border-slate-300 rounded px-2 py-1 text-sm" value={xAxisKey} onChange={e => setXAxisKey(e.target.value)}>{columns.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Trục Y (Giá trị)</label><select className="w-full border border-slate-300 rounded px-2 py-1 text-sm" value={yAxisKey} onChange={e => setYAxisKey(e.target.value)}><option value="count">Đếm (Count)</option>{columns.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                {yAxisKey !== 'count' && (<div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Phép tính</label><select className="w-full border border-slate-300 rounded px-2 py-1 text-sm" value={aggType} onChange={e => setAggType(e.target.value)}><option value="sum">Tổng (Sum)</option><option value="avg">TB (Average)</option></select></div>)}
             </div>
-
-            {/* Dashboard Content */}
             <div className="flex-1 p-6 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                        <div className="text-slate-500 text-xs uppercase font-bold">Tổng số bản ghi</div>
-                        <div className="text-3xl font-bold text-blue-900 mt-1">{data.length}</div>
-                    </div>
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                        <div className="text-slate-500 text-xs uppercase font-bold">Số nhóm (Trục X)</div>
-                        <div className="text-3xl font-bold text-green-600 mt-1">{processedData.length}</div>
-                    </div>
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                        <div className="text-slate-500 text-xs uppercase font-bold">Giá trị lớn nhất</div>
-                        <div className="text-3xl font-bold text-orange-500 mt-1">{processedData.length > 0 ? Math.max(...processedData.map(d => d.value)) : 0}</div>
-                    </div>
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200"><div className="text-slate-500 text-xs uppercase font-bold">Tổng số bản ghi</div><div className="text-3xl font-bold text-blue-900 mt-1">{data.length}</div></div>
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200"><div className="text-slate-500 text-xs uppercase font-bold">Số nhóm</div><div className="text-3xl font-bold text-green-600 mt-1">{processedData.length}</div></div>
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200"><div className="text-slate-500 text-xs uppercase font-bold">Max Value</div><div className="text-3xl font-bold text-orange-500 mt-1">{processedData.length > 0 ? Math.max(...processedData.map(d => d.value)) : 0}</div></div>
                 </div>
-
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-96">
-                    <ResponsiveContainer width="100%" height="100%">
-                        {renderChart()}
-                    </ResponsiveContainer>
-                </div>
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-96"><ResponsiveContainer width="100%" height="100%">{renderChart()}</ResponsiveContainer></div>
             </div>
         </div>
     );
@@ -584,7 +477,6 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [sheetConfig, setSheetConfig] = useState(null);
 
-  // Check login session khi vào App
   useEffect(() => {
       const savedUser = localStorage.getItem('pka_user_session');
       if (savedUser) setUser(JSON.parse(savedUser));
@@ -592,15 +484,7 @@ export default function App() {
 
   const handleLoginSuccess = (u) => setUser(u);
   const handleConfig = (id, range) => setSheetConfig({ id, range });
-  
-  // Đăng xuất: Xóa hết session
-  const handleLogout = () => { 
-      setUser(null); 
-      setSheetConfig(null);
-      localStorage.removeItem('pka_user_session');
-  };
-  
-  // Đổi nguồn: Chỉ xóa config, giữ user
+  const handleLogout = () => { setUser(null); setSheetConfig(null); localStorage.removeItem('pka_user_session'); };
   const handleChangeSource = () => setSheetConfig(null);
 
   if (!user) return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
