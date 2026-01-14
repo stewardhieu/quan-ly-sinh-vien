@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { gapi } from 'gapi-script'; // Thư viện kết nối Google
+import { useGoogleLogin } from '@react-oauth/google'; // Thư viện mới
+import axios from 'axios'; // Dùng để lấy info user
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend
@@ -9,17 +10,14 @@ import {
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown
 } from 'lucide-react';
 
-// --- CẤU HÌNH API ---
-// Lấy key từ file .env
+// --- CẤU HÌNH ---
+// API Key vẫn dùng để đọc Sheet, Token dùng để xác thực
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-const SCOPES = "https://www.googleapis.com/auth/spreadsheets.readonly";
 
-// --- UTILS ---
+// --- UTILS (Giữ nguyên) ---
 const formatValue = (value) => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'object') return JSON.stringify(value);
-  // Ép kiểu về chuỗi để tránh lỗi hiển thị số E+
   return String(value);
 };
 
@@ -69,39 +67,38 @@ const exportToExcelXML = (data, columns, filename) => {
 
 // --- COMPONENTS ---
 
-const LoginScreen = ({ onLogin }) => {
+const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
 
-  // Khởi tạo Google Auth
-  useEffect(() => {
-    function start() {
-      gapi.client.init({
-        apiKey: API_KEY,
-        clientId: CLIENT_ID,
-        scope: SCOPES,
-      });
-    }
-    gapi.load('client:auth2', start);
-  }, []);
-
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    try {
-        const authInstance = gapi.auth2.getAuthInstance();
-        const user = await authInstance.signIn();
-        const profile = user.getBasicProfile();
-        onLogin({
-            name: profile.getName(),
-            email: profile.getEmail(),
-            imageUrl: profile.getImageUrl(),
-            token: user.getAuthResponse().access_token // Lưu token để gọi API
+  // Hook đăng nhập mới của Google
+  const login = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      setLoading(true);
+      try {
+        // 1. Lấy thông tin User
+        const userInfo = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
         });
-    } catch (error) {
-        console.error("Login Failed:", error);
-        alert("Đăng nhập thất bại. Vui lòng kiểm tra console hoặc cấu hình API.");
-    }
-    setLoading(false);
-  };
+
+        // 2. Trả về thông tin user + Access Token để dùng cho Sheet API
+        onLoginSuccess({
+            name: userInfo.data.name,
+            email: userInfo.data.email,
+            imageUrl: userInfo.data.picture,
+            accessToken: tokenResponse.access_token 
+        });
+      } catch (error) {
+        console.error("Lỗi lấy thông tin user:", error);
+        alert("Đăng nhập thành công nhưng không lấy được thông tin.");
+      }
+      setLoading(false);
+    },
+    onError: (error) => {
+      console.error("Login Failed:", error);
+      alert("Đăng nhập thất bại. Vui lòng kiểm tra console.");
+    },
+    scope: "https://www.googleapis.com/auth/spreadsheets.readonly", // Xin quyền đọc Sheet ngay lúc đăng nhập
+  });
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-800 font-sans">
@@ -113,7 +110,7 @@ const LoginScreen = ({ onLogin }) => {
           <h1 className="text-2xl font-bold text-blue-900 uppercase tracking-wide">Hệ thống Quản lý Sinh viên</h1>
           <p className="text-slate-500 text-sm mt-2">Trường Kỹ thuật Phenikaa</p>
         </div>
-        <button onClick={handleGoogleLogin} disabled={loading} className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-300 rounded-lg hover:bg-slate-50 transition-all group">
+        <button onClick={() => login()} disabled={loading} className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-300 rounded-lg hover:bg-slate-50 transition-all group">
             {loading ? <RefreshCw className="animate-spin w-5 h-5 text-blue-900"/> : (
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -184,18 +181,22 @@ const Dashboard = ({ user, config, onLogout }) => {
   const [view, setView] = useState('table');
   const tableRef = useRef(null);
 
-  // --- LOGIC LẤY DỮ LIỆU THẬT TỪ GOOGLE SHEET ---
+  // --- LOGIC LẤY DỮ LIỆU TỪ GOOGLE SHEET (DÙNG AXIOS & TOKEN MỚI) ---
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-        // Gọi API Google Sheet
-        const response = await gapi.client.sheets.spreadsheets.values.get({
-            spreadsheetId: config.id,
-            range: config.range,
+        // Gọi API trực tiếp qua REST thay vì thư viện gapi cũ
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${API_KEY}`;
+        
+        const response = await axios.get(url, {
+            headers: {
+                // Sử dụng Access Token từ lúc đăng nhập để xác thực quyền
+                Authorization: `Bearer ${user.accessToken}`
+            }
         });
 
-        const result = response.result;
+        const result = response.data;
         const rows = result.values;
 
         if (!rows || rows.length === 0) {
@@ -204,32 +205,31 @@ const Dashboard = ({ user, config, onLogout }) => {
             return;
         }
 
-        // Dòng đầu tiên là tiêu đề cột
         const headers = rows[0]; 
         const dataRows = rows.slice(1);
 
-        // Chuyển mảng thành Objects
         const formattedData = dataRows.map((row, index) => {
-            const rowObject = { 'STT': index + 1 }; // Tự động thêm STT
+            const rowObject = { 'STT': index + 1 };
             headers.forEach((header, i) => {
-                // QUAN TRỌNG: Ép kiểu thành String để giữ số 0 ở đầu (SĐT, CCCD)
                 rowObject[header] = row[i] ? String(row[i]) : ""; 
             });
             return rowObject;
         });
 
         setRawData(formattedData);
-        setAllColumns(headers); // Set danh sách cột để chọn
-        
-        // Mặc định chọn 3 cột đầu tiên
+        setAllColumns(headers); 
         setQueryConfig(prev => ({ ...prev, selectedCols: headers.slice(0, 5) }));
 
     } catch (error) {
         console.error("Lỗi tải Sheet:", error);
-        setLoadError("Lỗi kết nối! Hãy kiểm tra quyền truy cập Sheet (Share cho email đang đăng nhập) hoặc ID Sheet.");
+        setLoadError(
+            error.response?.status === 403 
+            ? "Bạn không có quyền truy cập file này. Hãy chắc chắn bạn đã Share file cho email đang đăng nhập." 
+            : "Lỗi kết nối! Kiểm tra lại ID Sheet hoặc Mạng."
+        );
     }
     setLoading(false);
-  }, [config]);
+  }, [config, user.accessToken]);
 
   useEffect(() => {
     fetchGoogleSheetData();
@@ -250,7 +250,6 @@ const Dashboard = ({ user, config, onLogout }) => {
     setHistory(prev => ({ past: [...prev.past, { config: { ...queryConfig }, result: { ...resultState } }], future: [] }));
     let filtered = [...rawData];
 
-    // Xử lý bộ lọc danh sách (Paste Excel)
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const lookupValues = new Set(queryConfig.bulkFilter.values.split(/[\n,]+/).map(s => s.trim().toLowerCase()).filter(s => s !== ''));
@@ -259,7 +258,6 @@ const Dashboard = ({ user, config, onLogout }) => {
       }
     }
 
-    // Xử lý bộ lọc thường
     queryConfig.filters.forEach(filter => {
         if (filter.column && filter.value) {
             const lowerVal = filter.value.toLowerCase();
@@ -556,11 +554,11 @@ const OnDemandAnalytics = ({ data }) => {
 export default function App() {
   const [user, setUser] = useState(null);
   const [sheetConfig, setSheetConfig] = useState(null);
-  const handleLogin = (u) => setUser(u);
+  const handleLoginSuccess = (u) => setUser(u);
   const handleConfig = (id, range) => setSheetConfig({ id, range });
   const handleLogout = () => { setUser(null); setSheetConfig(null); };
 
-  if (!user) return <LoginScreen onLogin={handleLogin} />;
+  if (!user) return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
   if (!sheetConfig) return <SetupScreen onConfig={handleConfig} />;
   return <Dashboard user={user} config={sheetConfig} onLogout={handleLogout} />;
 }
