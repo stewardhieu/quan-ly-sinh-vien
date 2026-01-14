@@ -6,12 +6,12 @@ import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ZAxis
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, ScatterChart, Scatter
 } from 'recharts';
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
-  Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
-  GripVertical, ChevronUp, History, Database, Layers, GitMerge
+  Settings, LogOut, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
+  GripVertical, ChevronUp, History, Database
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -29,9 +29,9 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
 
-// THÊM SCOPE: Bắt buộc để lấy dữ liệu Sheet
+// FIX 1: Ép buộc Google hỏi lại quyền để đảm bảo lấy được Token mới nhất
 googleProvider.addScope("https://www.googleapis.com/auth/spreadsheets.readonly");
-googleProvider.setCustomParameters({ prompt: 'select_account' }); // Ép chọn tài khoản để refresh token
+googleProvider.setCustomParameters({ prompt: 'consent' }); 
 
 // --- UTILS ---
 const formatValue = (value) => {
@@ -78,14 +78,12 @@ const exportToExcelXML = (data, columns, filename) => {
   document.body.removeChild(link);
 };
 
-// --- COMPONENT: POPUP CHỌN CỘT ---
 const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Chọn cột dữ liệu" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const inputRef = useRef(null);
     useEffect(() => { if (isOpen && inputRef.current) setTimeout(() => inputRef.current.focus(), 100); setSearchTerm(""); }, [isOpen]);
     if (!isOpen) return null;
     const filteredCols = columns.filter(c => c.toLowerCase().includes(searchTerm.toLowerCase()));
-
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white w-full max-w-md rounded-xl shadow-2xl flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
@@ -97,21 +95,23 @@ const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Ch�
     );
 };
 
-// --- LOGIN SCREEN ---
+// --- LOGIN ---
 const LoginScreen = () => {
   const [loading, setLoading] = useState(false);
+  
   const handleLogin = async () => {
     setLoading(true);
     try {
         const result = await signInWithPopup(auth, googleProvider);
-        // --- KEY FIX: Lấy Access Token từ Google Credential và Lưu Ngay ---
+        // FIX 2: Lấy Token và lưu vào localStorage ngay lập tức
         const credential = GoogleAuthProvider.credentialFromResult(result);
         const token = credential?.accessToken;
         
         if (token) {
+            console.log("Got new Google Access Token");
             localStorage.setItem('pka_google_sheet_token', token);
         } else {
-            alert("Không lấy được quyền truy cập Sheet. Vui lòng thử lại.");
+            console.error("No access token found in credential");
         }
     } catch (error) {
         console.error("Login Error:", error);
@@ -140,7 +140,6 @@ const LoginScreen = () => {
   );
 };
 
-// --- SETUP SCREEN ---
 const SetupScreen = ({ user, onConfig }) => {
   const [sheetId, setSheetId] = useState('');
   const [range, setRange] = useState('Sheet1!A:Z');
@@ -206,7 +205,6 @@ const SetupScreen = ({ user, onConfig }) => {
   );
 };
 
-// --- DASHBOARD ---
 const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [rawData, setRawData] = useState([]);
   const [allColumns, setAllColumns] = useState([]);
@@ -235,15 +233,26 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true); setLoadError(null);
     try {
-        // --- KEY FIX: Lấy Token từ LocalStorage (Nơi đã lưu lúc login) ---
+        // FIX 3: Lấy Token từ LocalStorage - Nơi chắc chắn có token nếu đã login
         const token = localStorage.getItem('pka_google_sheet_token');
-        if (!token) throw new Error("TOKEN_MISSING");
+        
+        if (!token) {
+            console.error("TOKEN MISSING in LocalStorage");
+            throw new Error("TOKEN_MISSING");
+        }
 
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${firebaseConfig.apiKey}`;
-        const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        // FIX 4: Gọi API KHÔNG kèm API Key trên URL để tránh xung đột referrer
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}`;
+        
+        const response = await fetch(url, { 
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            } 
+        });
         
         if (response.status === 401 || response.status === 403) throw new Error("TOKEN_INVALID");
-        if (!response.ok) throw new Error(response.statusText);
+        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
         
         const result = await response.json();
         const rows = result.values;
@@ -261,12 +270,13 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         const initWidths = {}; headers.forEach(h => initWidths[h] = 150); setColumnWidths(initWidths);
 
     } catch (error) {
-        console.error("Lỗi tải Sheet:", error);
+        console.error("Fetch Error Detail:", error);
+        
         if (error.message === "TOKEN_MISSING" || error.message === "TOKEN_INVALID") {
-            alert("Phiên đăng nhập Google Sheet đã hết hạn. Vui lòng đăng nhập lại.");
-            onLogout();
+            alert("Phiên làm việc với Google Sheet đã hết hạn. Vui lòng đăng nhập lại để làm mới Token.");
+            onLogout(); // Logout để ép login lại lấy token mới
         } else {
-            setLoadError(`Lỗi kết nối: ${error.message}. Kiểm tra quyền Share file Sheet.`);
+            setLoadError(`Lỗi kết nối: ${error.message}.`);
         }
     }
     setLoading(false);
@@ -449,6 +459,7 @@ const OnDemandAnalytics = ({ data }) => {
         const keys = Object.keys(data[0]);
         const findKey = (kwd) => keys.find(k => k.toLowerCase().includes(kwd.toLowerCase()));
 
+        // Map cột
         const colClass = findKey('Lớp') || keys[1];
         const colStatus = findKey('Trạng thái') || findKey('Status');
         const colGender = findKey('Giới tính') || findKey('Phái');
