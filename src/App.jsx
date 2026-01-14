@@ -6,7 +6,7 @@ import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ZAxis
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, ScatterChart, Scatter
 } from 'recharts';
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
@@ -29,8 +29,11 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
-// Quan trọng: Xin quyền đọc Google Sheets
+
+// QUAN TRỌNG: Bắt buộc phải thêm scope này để đọc Sheet
 googleProvider.addScope("https://www.googleapis.com/auth/spreadsheets.readonly");
+// Force account selection to ensure fresh token
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 // --- UTILS ---
 const formatValue = (value) => {
@@ -111,10 +114,16 @@ const LoginScreen = () => {
     setLoading(true);
     try {
         const result = await signInWithPopup(auth, googleProvider);
-        // LẤY ACCESS TOKEN CỦA GOOGLE API VÀ LƯU LẠI
+        // QUAN TRỌNG: Lưu Access Token từ kết quả đăng nhập
         const credential = GoogleAuthProvider.credentialFromResult(result);
         const token = credential.accessToken;
-        localStorage.setItem('pka_google_token', token);
+        
+        if (token) {
+            localStorage.setItem('pka_google_token', token);
+            console.log("Token received & saved");
+        } else {
+            console.error("No access token returned!");
+        }
     } catch (error) {
         console.error("Firebase Login Error:", error);
         alert(`Đăng nhập thất bại: ${error.message}`);
@@ -134,7 +143,7 @@ const LoginScreen = () => {
             {loading ? <RefreshCw className="animate-spin w-5 h-5 text-blue-900"/> : (
                 <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.11c-.22-.66-.35-1.36-.35-2.11s.13-1.45.35-2.11V7.05H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.95l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.05l3.66 2.84c.87-2.6 3.3-4.51 6.16-4.51z" fill="#EA4335"/></svg>
             )}
-            <span className="font-medium text-slate-700 group-hover:text-blue-900">{loading ? 'Đang kết nối...' : 'Đăng nhập bằng Google (Firebase)'}</span>
+            <span className="font-medium text-slate-700 group-hover:text-blue-900">{loading ? 'Đang kết nối...' : 'Đăng nhập bằng Google'}</span>
         </button>
       </div>
     </motion.div>
@@ -147,7 +156,6 @@ const SetupScreen = ({ user, onConfig }) => {
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
-  // Tải lịch sử từ Firestore
   useEffect(() => {
     const loadHistory = async () => {
         if (!user) return;
@@ -172,23 +180,14 @@ const SetupScreen = ({ user, onConfig }) => {
     e.preventDefault();
     const newEntry = { id: sheetId, range: range, date: new Date().toLocaleDateString('vi-VN') };
     const newHistory = [newEntry, ...history.filter(h => h.id !== sheetId)].slice(0, 5);
-    
-    // Lưu vào Firestore
     try {
         await setDoc(doc(db, "users", user.uid), { history: newHistory }, { merge: true });
     } catch (e) { console.error("Lỗi lưu lịch sử:", e); }
-
     onConfig(sheetId, range);
   };
 
-  // Hàm xóa lịch sử
   const deleteHistoryItem = async (e, idToDelete) => {
-      e.stopPropagation(); // Ngăn click nhầm vào item
-      e.preventDefault();
-      
-      const confirmDelete = window.confirm("Bạn có chắc muốn xóa link này khỏi lịch sử?");
-      if (!confirmDelete) return;
-
+      e.stopPropagation();
       const updatedHistory = history.filter(h => h.id !== idToDelete);
       setHistory(updatedHistory);
       try {
@@ -215,12 +214,9 @@ const SetupScreen = ({ user, onConfig }) => {
               <div className="space-y-2">
                   {history.map((h, idx) => (
                       <div key={idx} onClick={() => { setSheetId(h.id); setRange(h.range); }} className="group relative text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors">
-                          <div className="font-medium text-slate-700 truncate pr-8">{h.id}</div>
+                          <div className="font-medium text-slate-700 truncate pr-6">{h.id}</div>
                           <div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div>
-                          {/* Nút xóa lịch sử (Trash Icon) */}
-                          <button onClick={(e) => deleteHistoryItem(e, h.id)} className="absolute top-2 right-2 p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all" title="Xóa lịch sử">
-                              <Trash2 size={14} />
-                          </button>
+                          <button onClick={(e) => deleteHistoryItem(e, h.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
                       </div>
                   ))}
                   {history.length === 0 && !isLoadingHistory && <p className="text-xs text-slate-300 italic">Chưa có lịch sử</p>}
@@ -257,7 +253,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [selection, setSelection] = useState({ start: { row: null, col: null }, end: { row: null, col: null }, isDragging: false });
   const [history, setHistory] = useState({ past: [], future: [] });
   const [view, setView] = useState('table');
-  
   const [columnWidths, setColumnWidths] = useState({});
   const resizingRef = useRef(null);
   const tableRef = useRef(null);
@@ -265,17 +260,14 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true); setLoadError(null);
     try {
-        // Lấy Token từ LocalStorage
         const token = localStorage.getItem('pka_google_token');
-        if (!token) throw new Error("Phiên đăng nhập hết hạn (Thiếu Token). Vui lòng đăng xuất và đăng nhập lại.");
+        if (!token) throw new Error("TOKEN_MISSING"); // Ký hiệu lỗi riêng
 
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${firebaseConfig.apiKey}`;
         const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
         
-        if (response.status === 401 || response.status === 403) {
-            throw new Error("Token hết hạn hoặc bạn không có quyền xem file này (403). Hãy đảm bảo file Sheet đã được Share cho email bạn đang dùng.");
-        }
-        if (!response.ok) throw new Error(`Lỗi Google API: ${response.statusText}`);
+        if (response.status === 401 || response.status === 403) throw new Error("TOKEN_INVALID");
+        if (!response.ok) throw new Error(response.statusText);
         
         const result = await response.json();
         const rows = result.values;
@@ -294,10 +286,17 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
     } catch (error) {
         console.error("Lỗi tải Sheet:", error);
-        setLoadError(error.message);
+        
+        if (error.message === "TOKEN_MISSING" || error.message === "TOKEN_INVALID") {
+            // Tự động đăng xuất để người dùng đăng nhập lại
+            alert("Phiên làm việc hết hạn hoặc bạn không có quyền xem file này. Vui lòng đăng nhập lại.");
+            onLogout(); 
+        } else {
+            setLoadError(`Lỗi kết nối: ${error.message}. Hãy kiểm tra ID Sheet và quyền Share.`);
+        }
     }
     setLoading(false);
-  }, [config, user]);
+  }, [config, onLogout]);
 
   useEffect(() => { fetchGoogleSheetData(); }, [fetchGoogleSheetData]);
 
@@ -476,7 +475,6 @@ const OnDemandAnalytics = ({ data }) => {
         const keys = Object.keys(data[0]);
         const findKey = (kwd) => keys.find(k => k.toLowerCase().includes(kwd.toLowerCase()));
 
-        // Map cột
         const colClass = findKey('Lớp') || keys[1];
         const colStatus = findKey('Trạng thái') || findKey('Status');
         const colGender = findKey('Giới tính') || findKey('Phái');
@@ -500,8 +498,8 @@ const OnDemandAnalytics = ({ data }) => {
             if(colCourse) counts.course[item[colCourse] || 'N/A'] = (counts.course[item[colCourse] || 'N/A'] || 0) + 1;
             
             if (!counts.majorGender[mj]) counts.majorGender[mj] = { name: mj, Nam: 0, Nữ: 0, Khác: 0 };
-            if (sx.toLowerCase().includes('nam')) counts.majorGender[mj].Nam++;
-            else if (sx.toLowerCase().includes('nữ')) counts.majorGender[mj].Nữ++;
+            if (String(sx).toLowerCase().includes('nam')) counts.majorGender[mj].Nam++;
+            else if (String(sx).toLowerCase().includes('nữ')) counts.majorGender[mj].Nữ++;
             else counts.majorGender[mj].Khác++;
 
             if(colScore && item[colScore]) {
@@ -555,12 +553,7 @@ export default function App() {
       const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
           if (currentUser) {
             const savedSession = localStorage.getItem('pka_google_token');
-            if (savedSession) {
-                setUser({ ...currentUser, accessToken: savedSession });
-            } else {
-                // Nếu không có token, ép logout để user đăng nhập lại
-                setUser(null);
-            }
+            setUser({ ...currentUser, accessToken: savedSession });
           } else {
               setUser(null);
           }
@@ -570,7 +563,12 @@ export default function App() {
 
   const handleLoginSuccess = (u) => { };
   const handleConfig = (id, range) => setSheetConfig({ id, range });
-  const handleLogout = async () => { await signOut(auth); localStorage.removeItem('pka_google_token'); setUser(null); setSheetConfig(null); };
+  const handleLogout = async () => { 
+      await signOut(auth); 
+      localStorage.removeItem('pka_google_token'); 
+      setUser(null); 
+      setSheetConfig(null); 
+  };
   const handleChangeSource = () => setSheetConfig(null);
 
   if (!user) return <LoginScreen />;
