@@ -7,7 +7,8 @@ import {
 } from 'recharts';
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
-  Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown
+  Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
+  GripVertical, ChevronUp, Menu
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -64,7 +65,71 @@ const exportToExcelXML = (data, columns, filename) => {
   document.body.removeChild(link);
 };
 
-// --- COMPONENTS ---
+// --- COMPONENT: SEARCHABLE DROPDOWN (Mới) ---
+const SearchableSelect = ({ options, value, onChange, placeholder = "Chọn...", className="" }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [search, setSearch] = useState("");
+    const wrapperRef = useRef(null);
+
+    // Click outside to close
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [wrapperRef]);
+
+    const filteredOptions = options.filter(opt => opt.toLowerCase().includes(search.toLowerCase()));
+
+    return (
+        <div className={`relative ${className}`} ref={wrapperRef}>
+            <div 
+                className="border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer flex justify-between items-center shadow-sm hover:border-blue-500"
+                onClick={() => { setIsOpen(!isOpen); setSearch(""); }} // Reset search on open
+            >
+                <span className={`truncate ${!value ? 'text-slate-400' : 'text-slate-800'}`}>
+                    {value || placeholder}
+                </span>
+                <ChevronDown size={14} className="text-slate-400 ml-2" />
+            </div>
+
+            {isOpen && (
+                <div className="absolute z-50 mt-1 w-full bg-white border border-slate-300 rounded-lg shadow-xl max-h-60 flex flex-col min-w-[200px]">
+                    <div className="p-2 border-b border-slate-100 sticky top-0 bg-white rounded-t-lg">
+                        <input 
+                            type="text" 
+                            autoFocus
+                            placeholder="Tìm kiếm..." 
+                            className="w-full px-2 py-1 text-sm border border-slate-200 rounded focus:outline-none focus:border-blue-500"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                        />
+                    </div>
+                    <div className="overflow-y-auto flex-1">
+                        {filteredOptions.length > 0 ? (
+                            filteredOptions.map(opt => (
+                                <div 
+                                    key={opt} 
+                                    className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${value === opt ? 'bg-blue-100 text-blue-900 font-medium' : 'text-slate-700'}`}
+                                    onClick={() => { onChange(opt); setIsOpen(false); }}
+                                >
+                                    {opt}
+                                </div>
+                            ))
+                        ) : (
+                            <div className="px-3 py-2 text-xs text-slate-400 italic text-center">Không tìm thấy</div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// --- MAIN COMPONENTS ---
 
 const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
@@ -87,15 +152,12 @@ const LoginScreen = ({ onLoginSuccess }) => {
       }
       setLoading(false);
     },
-    onError: (error) => {
-      console.error("Login Failed:", error);
-      alert("Đăng nhập thất bại. Vui lòng kiểm tra console.");
-    },
+    onError: (error) => { console.error("Login Failed:", error); alert("Đăng nhập thất bại."); },
     scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
   });
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-800 font-sans">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-800 font-sans px-4">
       <div className="w-full max-w-md p-8 bg-white rounded-xl shadow-lg border border-slate-200">
         <div className="text-center mb-8">
           <div className="mx-auto w-16 h-16 bg-blue-900 rounded-lg flex items-center justify-center mb-4">
@@ -106,15 +168,10 @@ const LoginScreen = ({ onLoginSuccess }) => {
         </div>
         <button onClick={() => login()} disabled={loading} className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-300 rounded-lg hover:bg-slate-50 transition-all group">
             {loading ? <RefreshCw className="animate-spin w-5 h-5 text-blue-900"/> : (
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                  <path d="M5.84 14.11c-.22-.66-.35-1.36-.35-2.11s.13-1.45.35-2.11V7.05H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.95l3.66-2.84z" fill="#FBBC05"/>
-                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.05l3.66 2.84c.87-2.6 3.3-4.51 6.16-4.51z" fill="#EA4335"/>
-                </svg>
+                <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.11c-.22-.66-.35-1.36-.35-2.11s.13-1.45.35-2.11V7.05H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.95l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.05l3.66 2.84c.87-2.6 3.3-4.51 6.16-4.51z" fill="#EA4335"/></svg>
             )}
             <span className="font-medium text-slate-700 group-hover:text-blue-900">
-                {loading ? 'Đang kết nối...' : 'Đăng nhập bằng tài khoản Google'}
+                {loading ? 'Đang kết nối...' : 'Đăng nhập bằng Google'}
             </span>
         </button>
       </div>
@@ -125,6 +182,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
 const SetupScreen = ({ onConfig }) => {
   const [sheetId, setSheetId] = useState(localStorage.getItem('sheet_id') || '');
   const [range, setRange] = useState(localStorage.getItem('sheet_range') || 'Sheet1!A:Z');
+  
   const handleSubmit = (e) => {
     e.preventDefault();
     localStorage.setItem('sheet_id', sheetId);
@@ -133,7 +191,7 @@ const SetupScreen = ({ onConfig }) => {
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-lg p-8 bg-white rounded-xl shadow-lg border border-slate-200">
         <h2 className="text-xl font-bold text-blue-900 mb-6 flex items-center gap-2">
           <Settings className="w-5 h-5" /> Cấu hình Nguồn Dữ liệu
@@ -141,7 +199,7 @@ const SetupScreen = ({ onConfig }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Spreadsheet ID</label>
-            <input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID của Google Sheet vào đây..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" />
+            <input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID của Google Sheet..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Data Range</label>
@@ -162,6 +220,10 @@ const Dashboard = ({ user, config, onLogout }) => {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
+  // Responsive state
+  const [isQueryBuilderOpen, setIsQueryBuilderOpen] = useState(true); // Toggle query builder on mobile
+  const [colSearchTerm, setColSearchTerm] = useState(""); // Search for columns
+
   const [queryConfig, setQueryConfig] = useState({
     selectedCols: [],
     bulkFilter: { column: '', values: '' },
@@ -172,16 +234,18 @@ const Dashboard = ({ user, config, onLogout }) => {
   const [selection, setSelection] = useState({ start: { row: null, col: null }, end: { row: null, col: null }, isDragging: false });
   const [history, setHistory] = useState({ past: [], future: [] });
   const [view, setView] = useState('table');
+  
+  // Table Resize & Reorder State
+  const [columnWidths, setColumnWidths] = useState({});
   const tableRef = useRef(null);
+  const resizingRef = useRef(null); // { col: string, startX: number, startWidth: number }
 
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${API_KEY}`;
-        const response = await axios.get(url, {
-            headers: { Authorization: `Bearer ${user.accessToken}` }
-        });
+        const response = await axios.get(url, { headers: { Authorization: `Bearer ${user.accessToken}` } });
         const result = response.data;
         const rows = result.values;
         if (!rows || rows.length === 0) {
@@ -193,24 +257,68 @@ const Dashboard = ({ user, config, onLogout }) => {
         const dataRows = rows.slice(1);
         const formattedData = dataRows.map((row, index) => {
             const rowObject = { 'STT': index + 1 };
-            headers.forEach((header, i) => {
-                rowObject[header] = row[i] ? String(row[i]) : ""; 
-            });
+            headers.forEach((header, i) => { rowObject[header] = row[i] ? String(row[i]) : ""; });
             return rowObject;
         });
         setRawData(formattedData);
         setAllColumns(headers); 
         setQueryConfig(prev => ({ ...prev, selectedCols: headers.slice(0, 5) }));
+        
+        // Init widths
+        const initWidths = {};
+        headers.forEach(h => initWidths[h] = 150);
+        setColumnWidths(initWidths);
+
     } catch (error) {
         console.error("Lỗi tải Sheet:", error);
-        setLoadError(error.response?.status === 403 ? "Bạn không có quyền truy cập file này." : "Lỗi kết nối! Kiểm tra lại ID Sheet hoặc Mạng.");
+        setLoadError(error.response?.status === 403 ? "Bạn không có quyền truy cập file này." : "Lỗi kết nối!");
     }
     setLoading(false);
   }, [config, user.accessToken]);
 
   useEffect(() => { fetchGoogleSheetData(); }, [fetchGoogleSheetData]);
 
-  // --- UI HANDLERS ---
+  // --- RESIZE HANDLER ---
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (resizingRef.current) {
+        const { col, startX, startWidth } = resizingRef.current;
+        const newWidth = Math.max(50, startWidth + (e.clientX - startX));
+        setColumnWidths(prev => ({ ...prev, [col]: newWidth }));
+      }
+    };
+    const handleMouseUp = () => { resizingRef.current = null; document.body.style.cursor = 'default'; };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  const startResizing = (e, col) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingRef.current = { col, startX: e.clientX, startWidth: columnWidths[col] || 150 };
+    document.body.style.cursor = 'col-resize';
+  };
+
+  // --- REORDER HANDLER (Drag & Drop) ---
+  const handleDragStart = (e, colIndex) => {
+    e.dataTransfer.setData("colIndex", colIndex);
+  };
+  const handleDrop = (e, targetIndex) => {
+    const sourceIndex = parseInt(e.dataTransfer.getData("colIndex"));
+    if (sourceIndex === targetIndex) return;
+    
+    const newCols = [...resultState.visibleCols];
+    const [movedCol] = newCols.splice(sourceIndex, 1);
+    newCols.splice(targetIndex, 0, movedCol);
+    
+    setResultState(prev => ({ ...prev, visibleCols: newCols }));
+  };
+
+  // --- UI HANDLERS (Selection, Undo, Redo...) ---
   useEffect(() => {
     const handleWindowMouseUp = () => { if (selection.isDragging) setSelection(prev => ({ ...prev, isDragging: false })); };
     window.addEventListener('mouseup', handleWindowMouseUp);
@@ -244,6 +352,8 @@ const Dashboard = ({ user, config, onLogout }) => {
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
     setSelection({ start: {row: null, col: null}, end: {row: null, col: null}, isDragging: false });
     setView('table');
+    // Mobile: Auto collapse query builder after run
+    if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
 
   const handleUndo = () => {
@@ -286,30 +396,31 @@ const Dashboard = ({ user, config, onLogout }) => {
   }, [handleCopy]);
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
 
+  // Filter columns for sidebar
+  const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
-      <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
+      <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="bg-blue-900 text-white p-2 rounded"><LayoutTemplate size={20} /></div>
-          <div><h1 className="font-bold text-blue-900 leading-tight">PKA MANAGEMENT</h1><p className="text-xs text-slate-500">Hệ thống Tra cứu & Phân tích dữ liệu</p></div>
+          <div className="bg-blue-900 text-white p-2 rounded hidden md:block"><LayoutTemplate size={20} /></div>
+          <div><h1 className="font-bold text-blue-900 leading-tight text-sm md:text-base">PKA MANAGEMENT</h1><p className="text-xs text-slate-500 hidden md:block">Hệ thống Tra cứu & Phân tích dữ liệu</p></div>
         </div>
-        <div className="flex items-center gap-4">
-            <button onClick={() => fetchGoogleSheetData()} className="p-2 text-blue-700 bg-blue-50 rounded hover:bg-blue-100 transition-colors" title="Tải lại dữ liệu"><RefreshCw size={18} /></button>
-            <div className="h-6 w-px bg-slate-300"></div>
-            <div className="flex items-center gap-2 bg-slate-50 rounded p-1">
+        <div className="flex items-center gap-2 md:gap-4">
+            <button onClick={() => fetchGoogleSheetData()} className="p-2 text-blue-700 bg-blue-50 rounded hover:bg-blue-100" title="Tải lại"><RefreshCw size={18} /></button>
+            <div className="h-6 w-px bg-slate-300 hidden md:block"></div>
+            <div className="hidden md:flex items-center gap-2 bg-slate-50 rounded p-1">
                 <button onClick={handleUndo} disabled={history.past.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Undo size={18} /></button>
                 <button onClick={handleRedo} disabled={history.future.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Redo size={18} /></button>
             </div>
-            <div className="h-6 w-px bg-slate-300"></div>
             <div className="flex items-center gap-2">
                 {user.imageUrl && <img src={user.imageUrl} alt="Avatar" className="w-8 h-8 rounded-full" />}
-                <span className="text-sm font-medium">{user.name}</span>
-                <button onClick={onLogout} className="text-slate-400 hover:text-red-500"><LogOut size={18} /></button>
+                <button onClick={onLogout} className="text-slate-400 hover:text-red-500 ml-2"><LogOut size={18} /></button>
             </div>
         </div>
       </header>
 
-      <main className="flex-1 p-6 overflow-hidden flex flex-col gap-6">
+      <main className="flex-1 p-3 md:p-6 overflow-hidden flex flex-col gap-4 md:gap-6">
         {loadError && (
             <div className="bg-red-50 text-red-700 p-4 rounded-lg border border-red-200 flex items-center justify-between">
                 <span>{loadError}</span>
@@ -317,124 +428,177 @@ const Dashboard = ({ user, config, onLogout }) => {
             </div>
         )}
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col gap-4">
-            <div className="flex justify-between items-end border-b border-slate-100 pb-2">
-                 <h2 className="text-lg font-bold text-blue-900 flex items-center gap-2"><Filter size={20} /> Query Builder</h2>
-                 <span className="text-xs text-slate-500">{loading ? 'Đang tải dữ liệu...' : `Dữ liệu gốc: ${rawData.length} dòng`}</span>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-5 flex flex-col gap-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2 cursor-pointer" onClick={() => setIsQueryBuilderOpen(!isQueryBuilderOpen)}>
+                 <h2 className="text-base md:text-lg font-bold text-blue-900 flex items-center gap-2">
+                    <Filter size={20} /> Query Builder
+                    {!isQueryBuilderOpen && <span className="text-xs font-normal text-slate-400 ml-2">(Nhấn để mở rộng)</span>}
+                 </h2>
+                 <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 hidden md:inline">{loading ? 'Đang tải...' : `Source: ${rawData.length} dòng`}</span>
+                    {isQueryBuilderOpen ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}
+                 </div>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                
-                {/* --- PHẦN ĐÃ SỬA: CHUYỂN THÀNH GRID 2 CỘT --- */}
-                <div className="lg:col-span-3 border-r border-slate-100 pr-4 flex flex-col gap-2">
-                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><List size={16} /> 1. Chọn cột hiển thị</label>
-                    <div className="flex gap-2 text-xs mb-1">
-                         <button onClick={() => setQueryConfig(p => ({...p, selectedCols: allColumns}))} className="text-blue-700 hover:underline">All</button>
-                         <button onClick={() => setQueryConfig(p => ({...p, selectedCols: []}))} className="text-slate-500 hover:underline">None</button>
-                    </div>
-                    {/* Thay đổi class ở đây: dùng grid-cols-2 */}
-                    <div className="flex-1 overflow-y-auto max-h-[60vh] border border-slate-200 rounded p-2 bg-slate-50 grid grid-cols-2 gap-x-2 gap-y-1 content-start">
-                        {allColumns.map(col => (
-                            <label key={col} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-white p-1 rounded transition-colors" title={col}>
-                                <input type="checkbox" checked={queryConfig.selectedCols.includes(col)}
-                                    onChange={() => setQueryConfig(p => ({...p, selectedCols: p.selectedCols.includes(col) ? p.selectedCols.filter(c => c !== col) : [...p.selectedCols, col]}))}
-                                    className="rounded text-blue-900 focus:ring-blue-900 shrink-0" />
-                                <span className="truncate">{col}</span>
-                            </label>
-                        ))}
-                    </div>
-                </div>
 
-                <div className="lg:col-span-6 flex flex-col gap-4 px-2">
-                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><Settings size={16} /> 2. Thiết lập điều kiện</label>
-                    <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                        <div className="flex justify-between mb-2"><span className="text-xs font-semibold uppercase text-slate-500">Lọc theo danh sách (Paste Excel)</span></div>
-                        <div className="flex gap-2">
-                             <select className="text-sm border border-slate-300 rounded px-2 py-1 w-1/3 bg-white"
-                                value={queryConfig.bulkFilter.column} onChange={(e) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, column: e.target.value } }))}>
-                                <option value="">-- Cột đối chiếu --</option>
-                                {allColumns.map(c => <option key={c} value={c}>{c}</option>)}
-                             </select>
-                             <input type="text" className="flex-1 border border-slate-300 rounded px-2 text-sm" placeholder="Paste danh sách mã SV, SĐT..."
-                                value={queryConfig.bulkFilter.values} onChange={(e) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, values: e.target.value } }))} />
+            {/* QUERY BUILDER CONTENT (Collapsible) */}
+            <AnimatePresence>
+            {isQueryBuilderOpen && (
+                <motion.div 
+                    initial={{ height: 0, opacity: 0 }} 
+                    animate={{ height: 'auto', opacity: 1 }} 
+                    exit={{ height: 0, opacity: 0 }}
+                    className="grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden"
+                >
+                    {/* CỘT 1: CHỌN CỘT (Có tìm kiếm) */}
+                    <div className="lg:col-span-3 border-r border-slate-100 lg:pr-4 flex flex-col gap-2">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><List size={16} /> 1. Chọn cột hiển thị</label>
+                        
+                        {/* Search Input for Columns */}
+                        <div className="relative">
+                            <Search size={14} className="absolute left-2 top-2 text-slate-400"/>
+                            <input 
+                                type="text" 
+                                placeholder="Tìm tên cột..." 
+                                className="w-full pl-8 pr-2 py-1 text-xs border border-slate-200 rounded focus:border-blue-500 outline-none"
+                                value={colSearchTerm}
+                                onChange={(e) => setColSearchTerm(e.target.value)}
+                            />
                         </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                        <div className="flex justify-between items-center">
-                            <span className="text-xs font-semibold uppercase text-slate-500">Điều kiện chi tiết (AND)</span>
-                            <button onClick={addFilterCondition} className="text-xs flex items-center gap-1 text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition-colors"><Plus size={14} /> Thêm điều kiện</button>
+
+                        <div className="flex gap-2 text-xs mb-1">
+                            <button onClick={() => setQueryConfig(p => ({...p, selectedCols: allColumns}))} className="text-blue-700 hover:underline">All</button>
+                            <button onClick={() => setQueryConfig(p => ({...p, selectedCols: []}))} className="text-slate-500 hover:underline">None</button>
                         </div>
-                        <div className="max-h-32 overflow-y-auto pr-2 space-y-2">
-                            {queryConfig.filters.map((filter, idx) => (
-                                <div key={filter.id} className="flex gap-2 items-center text-sm">
-                                    <span className="text-slate-400 font-mono text-xs w-4">{idx + 1}.</span>
-                                    <select className="border border-slate-300 rounded px-2 py-1 w-1/3" value={filter.column} onChange={(e) => updateFilter(filter.id, 'column', e.target.value)}>
-                                        <option value="">(Chọn cột)</option>
-                                        {allColumns.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                    <select className="border border-slate-300 rounded px-2 py-1 w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}>
-                                        <option value="contains">Chứa</option>
-                                        <option value="equals">Bằng tuyệt đối</option>
-                                        <option value="starts">Bắt đầu với</option>
-                                    </select>
-                                    <input type="text" className="flex-1 border border-slate-300 rounded px-2 py-1" placeholder="Giá trị..." value={filter.value} onChange={(e) => updateFilter(filter.id, 'value', e.target.value)} />
-                                    <button onClick={() => removeFilterCondition(filter.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={16} /></button>
-                                </div>
+                        <div className="flex-1 overflow-y-auto max-h-[40vh] md:max-h-[50vh] border border-slate-200 rounded p-2 bg-slate-50 grid grid-cols-2 gap-x-2 gap-y-1 content-start">
+                            {filteredColumns.map(col => (
+                                <label key={col} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-white p-1 rounded transition-colors" title={col}>
+                                    <input type="checkbox" checked={queryConfig.selectedCols.includes(col)}
+                                        onChange={() => setQueryConfig(p => ({...p, selectedCols: p.selectedCols.includes(col) ? p.selectedCols.filter(c => c !== col) : [...p.selectedCols, col]}))}
+                                        className="rounded text-blue-900 focus:ring-blue-900 shrink-0" />
+                                    <span className="truncate">{col}</span>
+                                </label>
                             ))}
                         </div>
                     </div>
-                </div>
 
-                <div className="lg:col-span-3 border-l border-slate-100 pl-4 flex flex-col justify-end pb-1">
-                    <button onClick={runQuery} disabled={loading} className="w-full py-3 bg-blue-900 hover:bg-blue-800 disabled:bg-slate-300 text-white rounded-lg shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95">
-                        {loading ? <RefreshCw className="animate-spin" /> : <Play size={20} fill="currentColor" />}
-                        {loading ? 'ĐANG TẢI...' : 'CHẠY TRUY VẤN'}
-                    </button>
-                </div>
-            </div>
+                    {/* CỘT 2: BỘ LỌC (Dùng SearchableSelect) */}
+                    <div className="lg:col-span-6 flex flex-col gap-4 lg:px-2">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><Settings size={16} /> 2. Thiết lập điều kiện</label>
+                        <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                            <div className="flex justify-between mb-2"><span className="text-xs font-semibold uppercase text-slate-500">Lọc theo danh sách (Paste Excel)</span></div>
+                            <div className="flex flex-col md:flex-row gap-2">
+                                <SearchableSelect 
+                                    className="w-full md:w-1/3"
+                                    options={allColumns}
+                                    value={queryConfig.bulkFilter.column}
+                                    onChange={(val) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, column: val } }))}
+                                    placeholder="Cột đối chiếu"
+                                />
+                                <input type="text" className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm" placeholder="Paste danh sách mã SV, SĐT..."
+                                    value={queryConfig.bulkFilter.values} onChange={(e) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, values: e.target.value } }))} />
+                            </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs font-semibold uppercase text-slate-500">Điều kiện chi tiết (AND)</span>
+                                <button onClick={addFilterCondition} className="text-xs flex items-center gap-1 text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition-colors"><Plus size={14} /> Thêm điều kiện</button>
+                            </div>
+                            <div className="max-h-48 overflow-y-auto pr-1 space-y-2">
+                                {queryConfig.filters.map((filter, idx) => (
+                                    <div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0">
+                                        <span className="text-slate-400 font-mono text-xs w-4 hidden md:inline">{idx + 1}.</span>
+                                        <SearchableSelect 
+                                            className="w-full md:w-1/3"
+                                            options={allColumns}
+                                            value={filter.column}
+                                            onChange={(val) => updateFilter(filter.id, 'column', val)}
+                                            placeholder="(Chọn cột)"
+                                        />
+                                        <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}>
+                                            <option value="contains">Chứa</option>
+                                            <option value="equals">Bằng tuyệt đối</option>
+                                            <option value="starts">Bắt đầu với</option>
+                                        </select>
+                                        <input type="text" className="flex-1 border border-slate-300 rounded px-3 py-2 w-full" placeholder="Giá trị..." value={filter.value} onChange={(e) => updateFilter(filter.id, 'value', e.target.value)} />
+                                        <button onClick={() => removeFilterCondition(filter.id)} className="text-red-400 hover:text-red-600 p-1 self-end md:self-center"><Trash2 size={16} /></button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* CỘT 3: NÚT CHẠY */}
+                    <div className="lg:col-span-3 border-l border-slate-100 lg:pl-4 flex flex-col justify-end pb-1">
+                        <button onClick={runQuery} disabled={loading} className="w-full py-3 bg-blue-900 hover:bg-blue-800 disabled:bg-slate-300 text-white rounded-lg shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95">
+                            {loading ? <RefreshCw className="animate-spin" /> : <Play size={20} fill="currentColor" />}
+                            {loading ? 'ĐANG TẢI...' : 'CHẠY TRUY VẤN'}
+                        </button>
+                    </div>
+                </motion.div>
+            )}
+            </AnimatePresence>
         </div>
 
         <div className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-            <div className="flex justify-between items-center px-4 pt-2 border-b border-slate-200 bg-slate-50">
+            <div className="flex flex-wrap gap-2 justify-between items-center px-4 pt-2 border-b border-slate-200 bg-slate-50">
                  <div className="flex gap-2">
-                    <button onClick={() => setView('table')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'table' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><TableIcon size={16} /> Bảng Kết Quả</button>
+                    <button onClick={() => setView('table')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'table' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><TableIcon size={16} /> Kết Quả</button>
                     <button onClick={() => setView('analytics')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'analytics' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><ChartIcon size={16} /> Phân tích</button>
                  </div>
                  {resultState.isExecuted && view === 'table' && (
-                     <div className="flex items-center gap-3 pb-1">
-                        <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded">{resultState.data.length} bản ghi</span>
+                     <div className="flex items-center gap-2 pb-1 overflow-x-auto">
+                        <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap">{resultState.data.length} dòng</span>
                         <div className="h-4 w-px bg-slate-300"></div>
-                        <button onClick={handleCopy} className="flex items-center gap-1 text-sm text-slate-600 hover:text-blue-900 font-medium"><Copy size={16} /> Copy Range</button>
-                        <button onClick={() => exportToExcelXML(resultState.data, resultState.visibleCols, 'KetQuaLoc.xls')} className="flex items-center gap-1 text-sm text-green-700 hover:text-green-800 font-medium"><FileSpreadsheet size={16} /> Xuất Excel</button>
+                        <button onClick={handleCopy} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> Copy</button>
+                        <button onClick={() => exportToExcelXML(resultState.data, resultState.visibleCols, 'KetQua.xls')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
                      </div>
                  )}
             </div>
 
             <div className="flex-1 overflow-hidden relative">
                 {!resultState.isExecuted ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 p-4 text-center">
                         <Search size={64} className="mb-4 opacity-20" />
                         <p className="text-lg font-medium">Vui lòng thiết lập điều kiện và chạy truy vấn</p>
                     </div>
                 ) : (
                     view === 'table' ? (
                         <div className="h-full w-full overflow-auto select-none" ref={tableRef}> 
-                            <table className="w-full text-left text-sm border-collapse">
-                                <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10">
+                            <table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}>
+                                <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm">
                                     <tr>
-                                        <th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center">#</th>
+                                        <th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>
                                         {resultState.visibleCols.map((col, cIdx) => (
-                                            <th key={col} className="p-2 border border-slate-300 whitespace-nowrap"><div className="flex items-center gap-1">{col} <ChevronDown size={12} className="opacity-50"/></div></th>
+                                            <th 
+                                                key={col} 
+                                                style={{ width: columnWidths[col] || 150 }}
+                                                className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors"
+                                                draggable
+                                                onDragStart={(e) => handleDragStart(e, cIdx)}
+                                                onDragOver={(e) => e.preventDefault()}
+                                                onDrop={(e) => handleDrop(e, cIdx)}
+                                            >
+                                                <div className="flex items-center justify-between gap-1 w-full overflow-hidden cursor-grab active:cursor-grabbing">
+                                                    <span className="truncate" title={col}>{col}</span>
+                                                    <GripVertical size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />
+                                                </div>
+                                                {/* Resize Handle */}
+                                                <div 
+                                                    className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10"
+                                                    onMouseDown={(e) => startResizing(e, col)}
+                                                />
+                                            </th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {resultState.data.map((row, rIdx) => (
-                                        <tr key={rIdx}>
-                                            <td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50">{rIdx + 1}</td>
+                                        <tr key={rIdx} className="hover:bg-slate-50">
+                                            <td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{rIdx + 1}</td>
                                             {resultState.visibleCols.map((col, cIdx) => (
                                                 <td key={`${rIdx}-${col}`} 
                                                     onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)}
-                                                    className={`p-2 border border-slate-300 whitespace-nowrap cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : 'hover:bg-slate-50'}`}>
+                                                    className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>
                                                     {formatValue(row[col])}
                                                 </td>
                                             ))}
@@ -452,16 +616,14 @@ const Dashboard = ({ user, config, onLogout }) => {
   );
 };
 
+// --- COMPONENT PHÂN TÍCH ---
 const OnDemandAnalytics = ({ data }) => {
     const [activeCharts, setActiveCharts] = useState([]);
     
-    // Logic tính toán thống kê
     const stats = useMemo(() => {
         if (data.length === 0) return {};
-        const firstRow = data[0];
-        const keys = Object.keys(firstRow);
-
-        const findKey = (keyword) => keys.find(k => k.toLowerCase().includes(keyword.toLowerCase()));
+        const keys = Object.keys(data[0]);
+        const findKey = (kwd) => keys.find(k => k.toLowerCase().includes(kwd.toLowerCase()));
 
         const colClass = findKey('Lớp') || keys[1];
         const colStatus = findKey('Trạng thái') || findKey('Status');
@@ -472,9 +634,7 @@ const OnDemandAnalytics = ({ data }) => {
         const colMajor = findKey('Ngành') || findKey('Chương trình') || keys[2];
         const colCourse = findKey('Khoá') || findKey('Khóa đào tạo');
 
-        const counts = { 
-            class: {}, status: {}, gender: {}, method: {}, area: {}, party: {}, major: {}, course: {} 
-        };
+        const counts = { class: {}, status: {}, gender: {}, method: {}, area: {}, party: {}, major: {}, course: {} };
 
         data.forEach(item => {
             counts.class[item[colClass] || 'Khác'] = (counts.class[item[colClass] || 'Khác'] || 0) + 1;
@@ -484,7 +644,6 @@ const OnDemandAnalytics = ({ data }) => {
             if(colMethod) counts.method[item[colMethod] || 'N/A'] = (counts.method[item[colMethod] || 'N/A'] || 0) + 1;
             if(colArea) counts.area[item[colArea] || 'N/A'] = (counts.area[item[colArea] || 'N/A'] || 0) + 1;
             if(colCourse) counts.course[item[colCourse] || 'N/A'] = (counts.course[item[colCourse] || 'N/A'] || 0) + 1;
-            
             if(colParty) {
                 const isMember = item[colParty] && item[colParty].trim().length > 4 ? 'Đảng viên' : 'Quần chúng';
                 counts.party[isMember] = (counts.party[isMember] || 0) + 1;
@@ -508,7 +667,6 @@ const OnDemandAnalytics = ({ data }) => {
 
     const toggleChart = (id) => setActiveCharts(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
     const COLORS = ['#003366', '#0055AA', '#0077EE', '#4499FF', '#88BBFF', '#CCDDEE', '#FFBB28', '#FF8042'];
-
     const CHART_CONFIG = [
         { id: 'status', label: 'Trạng thái Sinh viên', type: 'pie', show: stats.hasCol?.status },
         { id: 'gender', label: 'Cơ cấu Giới tính', type: 'pie', show: stats.hasCol?.gender },
@@ -521,14 +679,14 @@ const OnDemandAnalytics = ({ data }) => {
     ];
 
     return (
-        <div className="h-full overflow-y-auto p-6 bg-slate-50">
+        <div className="h-full overflow-y-auto p-4 md:p-6 bg-slate-50">
             <div className="mb-6">
-                <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">Thêm biểu đồ vào Báo cáo</h3>
+                <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">Thêm biểu đồ</h3>
                 <div className="flex flex-wrap gap-2">
                     {CHART_CONFIG.filter(c => c.show).map(opt => (
                         <button key={opt.id} onClick={() => toggleChart(opt.id)}
-                            className={`px-3 py-2 rounded-full text-sm font-medium border transition-all flex items-center gap-2
-                                ${activeCharts.includes(opt.id) ? 'bg-blue-900 text-white border-blue-900 shadow-md' : 'bg-white text-slate-600 border-slate-300 hover:border-blue-900 hover:text-blue-900'}`}>
+                            className={`px-3 py-2 rounded-full text-xs md:text-sm font-medium border transition-all flex items-center gap-2
+                                ${activeCharts.includes(opt.id) ? 'bg-blue-900 text-white border-blue-900 shadow-md' : 'bg-white text-slate-600 border-slate-300'}`}>
                             {activeCharts.includes(opt.id) ? <Check size={14} /> : <Plus size={14} />} {opt.label}
                         </button>
                     ))}
@@ -541,31 +699,25 @@ const OnDemandAnalytics = ({ data }) => {
                         const config = CHART_CONFIG.find(c => c.id === chartId);
                         const chartData = stats[chartId];
                         if (!config || !chartData) return null;
-
                         return (
-                            <motion.div key={chartId} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                                className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col relative group">
+                            <motion.div key={chartId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col relative group">
                                 <div className="flex justify-between items-center mb-4">
-                                    <h4 className="font-bold text-blue-900">{config.label}</h4>
-                                    <button onClick={() => toggleChart(chartId)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X size={18} /></button>
+                                    <h4 className="font-bold text-blue-900 text-sm md:text-base">{config.label}</h4>
+                                    <button onClick={() => toggleChart(chartId)} className="text-slate-300 hover:text-red-500"><X size={18} /></button>
                                 </div>
                                 <div className="flex-1 min-h-0 text-xs">
                                     <ResponsiveContainer width="100%" height="100%">
                                         {config.type === 'pie' ? (
                                             <PieChart>
-                                                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                                                    {chartData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                                                </Pie>
-                                                <RechartsTooltip />
-                                                <Legend />
+                                                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{chartData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie>
+                                                <RechartsTooltip /><Legend />
                                             </PieChart>
                                         ) : (
                                             <BarChart data={chartData} layout={chartData.length > 8 ? 'vertical' : 'horizontal'}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                                 {chartData.length > 8 ? <XAxis type="number"/> : <XAxis dataKey="name" interval={0} angle={-15} textAnchor="end" height={60}/>}
                                                 {chartData.length > 8 ? <YAxis dataKey="name" type="category" width={100}/> : <YAxis />}
-                                                <RechartsTooltip cursor={{fill: '#f0f9ff'}} />
-                                                <Bar dataKey="value" fill="#003366" radius={[4, 4, 0, 0]} name="Số lượng" />
+                                                <RechartsTooltip cursor={{fill: '#f0f9ff'}} /><Bar dataKey="value" fill="#003366" radius={[4, 4, 0, 0]} name="Số lượng" />
                                             </BarChart>
                                         )}
                                     </ResponsiveContainer>
@@ -575,13 +727,6 @@ const OnDemandAnalytics = ({ data }) => {
                     })}
                 </AnimatePresence>
             </div>
-            
-            {activeCharts.length === 0 && (
-                <div className="text-center py-20 border-2 border-dashed border-slate-300 rounded-xl bg-slate-100">
-                    <p className="text-slate-500 font-medium">Chưa có biểu đồ nào được chọn</p>
-                    <p className="text-slate-400 text-sm mt-1">Vui lòng chọn các mục ở trên để hiển thị phân tích</p>
-                </div>
-            )}
         </div>
     );
 };
