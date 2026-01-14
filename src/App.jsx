@@ -1,21 +1,20 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useGoogleLogin } from '@react-oauth/google';
+import { useGoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, ScatterChart, Scatter
 } from 'recharts';
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
-  GripVertical, ChevronUp, History, Database
+  GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
+// Lấy Client ID từ env để đảm bảo bảo mật khi deploy
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
-
-// --- ID MẶC ĐỊNH (BẠN YÊU CẦU) ---
-const DEFAULT_SHEET_ID = "1Fr2_gsNd6I9WlsuRGdlrPEuF9GVoESo_aum3bhgqug4";
 
 // --- UTILS ---
 const formatValue = (value) => {
@@ -72,38 +71,23 @@ const exportToExcelXML = (data, columns, filename) => {
 const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Chọn cột dữ liệu" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const inputRef = useRef(null);
-    useEffect(() => {
-        if (isOpen && inputRef.current) setTimeout(() => inputRef.current.focus(), 100);
-        setSearchTerm("");
-    }, [isOpen]);
-
+    useEffect(() => { if (isOpen && inputRef.current) setTimeout(() => inputRef.current.focus(), 100); setSearchTerm(""); }, [isOpen]);
     if (!isOpen) return null;
     const filteredCols = columns.filter(c => c.toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white w-full max-w-md rounded-xl shadow-2xl flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
-                <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-                    <h3 className="font-bold text-blue-900">{title}</h3>
-                    <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full"><X size={20}/></button>
-                </div>
-                <div className="p-3 bg-slate-50 border-b border-slate-100">
-                    <div className="relative">
-                        <Search size={16} className="absolute left-3 top-2.5 text-slate-400"/>
-                        <input ref={inputRef} type="text" className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Tìm kiếm tên cột..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                    </div>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2">
-                    {filteredCols.length > 0 ? (
-                        <div className="grid grid-cols-1 gap-1">{filteredCols.map(col => (<button key={col} onClick={() => { onSelect(col); onClose(); }} className="text-left px-4 py-3 hover:bg-blue-50 rounded-lg text-sm text-slate-700 hover:text-blue-900 transition-colors flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>{col}</button>))}</div>
-                    ) : (<div className="p-8 text-center text-slate-400 text-sm">Không tìm thấy cột nào</div>)}
-                </div>
+                <div className="p-4 border-b border-slate-100 flex justify-between items-center"><h3 className="font-bold text-blue-900">{title}</h3><button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full"><X size={20}/></button></div>
+                <div className="p-3 bg-slate-50 border-b border-slate-100"><div className="relative"><Search size={16} className="absolute left-3 top-2.5 text-slate-400"/><input ref={inputRef} type="text" className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Tìm kiếm tên cột..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div></div>
+                <div className="flex-1 overflow-y-auto p-2">{filteredCols.length > 0 ? (<div className="grid grid-cols-1 gap-1">{filteredCols.map(col => (<button key={col} onClick={() => { onSelect(col); onClose(); }} className="text-left px-4 py-3 hover:bg-blue-50 rounded-lg text-sm text-slate-700 hover:text-blue-900 transition-colors flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>{col}</button>))}</div>) : (<div className="p-8 text-center text-slate-400 text-sm">Không tìm thấy cột nào</div>)}</div>
             </motion.div>
         </div>
     );
 };
 
-// --- LOGIN SCREEN ---
+// --- MAIN COMPONENTS ---
+
 const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const login = useGoogleLogin({
@@ -150,10 +134,8 @@ const LoginScreen = ({ onLoginSuccess }) => {
   );
 };
 
-// --- SETUP SCREEN ---
 const SetupScreen = ({ onConfig }) => {
-  // SỬA: Dùng DEFAULT_SHEET_ID làm giá trị mặc định nếu localStorage chưa có
-  const [sheetId, setSheetId] = useState(localStorage.getItem('last_sheet_id') || DEFAULT_SHEET_ID);
+  const [sheetId, setSheetId] = useState(localStorage.getItem('last_sheet_id') || '');
   const [range, setRange] = useState(localStorage.getItem('last_sheet_range') || 'Sheet1!A:Z');
   const [history, setHistory] = useState([]);
 
@@ -171,8 +153,6 @@ const SetupScreen = ({ onConfig }) => {
     onConfig(sheetId, range);
   };
 
-  const useHistoryItem = (item) => { setSheetId(item.id); setRange(item.range); };
-
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-lg p-8 bg-white rounded-xl shadow-lg border border-slate-200">
@@ -183,7 +163,14 @@ const SetupScreen = ({ onConfig }) => {
           {history.length > 0 && (
               <div className="mt-4 pt-4 border-t border-slate-100">
                   <p className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> Gần đây</p>
-                  <div className="space-y-2">{history.map((h, idx) => (<div key={idx} onClick={() => useHistoryItem(h)} className="text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors"><div className="font-medium text-slate-700 truncate">{h.id}</div><div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div></div>))}</div>
+                  <div className="space-y-2">
+                      {history.map((h, idx) => (
+                          <div key={idx} onClick={() => { setSheetId(h.id); setRange(h.range); }} className="text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors">
+                              <div className="font-medium text-slate-700 truncate">{h.id}</div>
+                              <div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div>
+                          </div>
+                      ))}
+                  </div>
               </div>
           )}
           <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4"><Check className="w-4 h-4" /> Kết nối Dữ liệu</button>
@@ -193,19 +180,28 @@ const SetupScreen = ({ onConfig }) => {
   );
 };
 
-// --- DASHBOARD ---
 const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [rawData, setRawData] = useState([]);
   const [allColumns, setAllColumns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
+  // Pagination State (Tối ưu Mobile)
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 50;
+
   const [isQueryBuilderOpen, setIsQueryBuilderOpen] = useState(true);
   const [colSearchTerm, setColSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
 
-  const [queryConfig, setQueryConfig] = useState({ selectedCols: [], bulkFilter: { column: '', values: '' }, filters: [{ id: 1, column: '', condition: 'contains', value: '' }] });
+  // Query Config với Operator
+  const [queryConfig, setQueryConfig] = useState({
+    selectedCols: [],
+    bulkFilter: { column: '', values: '' },
+    filters: [{ id: 1, column: '', condition: 'contains', value: '', operator: 'AND' }]
+  });
+
   const [resultState, setResultState] = useState({ data: [], visibleCols: [], isExecuted: false });
   const [selection, setSelection] = useState({ start: { row: null, col: null }, end: { row: null, col: null }, isDragging: false });
   const [history, setHistory] = useState({ past: [], future: [] });
@@ -222,6 +218,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         const result = response.data;
         const rows = result.values;
         if (!rows || rows.length === 0) { setLoadError("Không tìm thấy dữ liệu trong vùng đã chọn."); setLoading(false); return; }
+        
         const headers = rows[0]; 
         const dataRows = rows.slice(1);
         const formattedData = dataRows.map((row, index) => {
@@ -232,6 +229,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         setRawData(formattedData); setAllColumns(headers); 
         setQueryConfig(prev => ({ ...prev, selectedCols: headers.slice(0, 5) }));
         const initWidths = {}; headers.forEach(h => initWidths[h] = 150); setColumnWidths(initWidths);
+
     } catch (error) {
         console.error("Lỗi tải Sheet:", error);
         setLoadError(error.response?.status === 403 ? "Bạn không có quyền truy cập file này." : "Lỗi kết nối! Kiểm tra lại ID Sheet hoặc Mạng.");
@@ -247,16 +245,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       else if (modalTarget.type === 'filter') updateFilter(modalTarget.id, 'column', colName);
   };
 
-  const handleDragStart = (e, colIndex) => { e.dataTransfer.setData("colIndex", colIndex); };
-  const handleDrop = (e, targetIndex) => {
-    const sourceIndex = parseInt(e.dataTransfer.getData("colIndex"));
-    if (sourceIndex === targetIndex) return;
-    const newCols = [...resultState.visibleCols];
-    const [movedCol] = newCols.splice(sourceIndex, 1);
-    newCols.splice(targetIndex, 0, movedCol);
-    setResultState(prev => ({ ...prev, visibleCols: newCols }));
-  };
-
+  // --- RESIZE & DRAG ---
   useEffect(() => {
     const handleMouseMove = (e) => { if (resizingRef.current) { const { col, startX, startWidth } = resizingRef.current; setColumnWidths(prev => ({ ...prev, [col]: Math.max(50, startWidth + (e.clientX - startX)) })); }};
     const handleMouseUp = () => { resizingRef.current = null; document.body.style.cursor = 'default'; };
@@ -264,46 +253,99 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
   }, []);
   const startResizing = (e, col) => { e.preventDefault(); e.stopPropagation(); resizingRef.current = { col, startX: e.clientX, startWidth: columnWidths[col] || 150 }; document.body.style.cursor = 'col-resize'; };
+  const handleDragStart = (e, ci) => e.dataTransfer.setData("colIndex", ci);
+  const handleDrop = (e, ti) => { const si = parseInt(e.dataTransfer.getData("colIndex")); if (si === ti) return; const nc = [...resultState.visibleCols]; const [mc] = nc.splice(si, 1); nc.splice(ti, 0, mc); setResultState(p => ({ ...p, visibleCols: nc })); };
 
-  const addFilterCondition = () => setQueryConfig(prev => ({ ...prev, filters: [...prev.filters, { id: Date.now(), column: '', condition: 'contains', value: '' }] }));
+  // --- LOGIC LỌC NÂNG CAO & BULK FIX ---
+  const addFilterCondition = () => setQueryConfig(prev => ({ ...prev, filters: [...prev.filters, { id: Date.now(), column: '', condition: 'contains', value: '', operator: 'AND' }] }));
   const removeFilterCondition = (id) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.filter(f => f.id !== id) }));
   const updateFilter = (id, field, value) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.map(f => f.id === id ? { ...f, [field]: value } : f) }));
+
+  const checkCondition = (row, filter) => {
+      if (!filter.column || !filter.value) return true; 
+      const cellVal = String(row[filter.column] || '').toLowerCase();
+      const searchVal = filter.value.toLowerCase();
+      switch (filter.condition) {
+          case 'contains': return cellVal.includes(searchVal);
+          case 'not_contains': return !cellVal.includes(searchVal);
+          case 'equals': return cellVal === searchVal;
+          case 'not_equals': return cellVal !== searchVal;
+          case 'starts': return cellVal.startsWith(searchVal);
+          case 'greater': return parseFloat(cellVal) >= parseFloat(searchVal);
+          case 'less': return parseFloat(cellVal) <= parseFloat(searchVal);
+          default: return true;
+      }
+  };
 
   const runQuery = () => {
     setHistory(prev => ({ past: [...prev.past, { config: { ...queryConfig }, result: { ...resultState } }], future: [] }));
     let filtered = [...rawData];
+    
+    // 1. Bulk Filter (Fix lỗi: Tách theo dòng, trim khoảng trắng)
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
-      const lookupValues = new Set(queryConfig.bulkFilter.values.split(/[\n,]+/).map(s => s.trim().toLowerCase()).filter(s => s !== ''));
-      if (lookupValues.size > 0) filtered = filtered.filter(row => lookupValues.has(String(row[targetCol]).toLowerCase()));
+      // Tách bằng regex \r?\n để bắt cả xuống dòng window/mac
+      const rawValues = queryConfig.bulkFilter.values.split(/\r?\n/); 
+      const lookupValues = new Set(
+          rawValues.map(s => s.trim().toLowerCase()).filter(s => s !== '')
+      );
+      
+      if (lookupValues.size > 0) {
+          filtered = filtered.filter(row => {
+              const cellVal = String(row[targetCol]).trim().toLowerCase();
+              return lookupValues.has(cellVal);
+          });
+      }
     }
-    queryConfig.filters.forEach(filter => {
-        if (filter.column && filter.value) {
-            const lowerVal = filter.value.toLowerCase();
-            filtered = filtered.filter(row => {
-                const cellVal = String(row[filter.column] || '').toLowerCase();
-                if (filter.condition === 'equals') return cellVal === lowerVal;
-                if (filter.condition === 'contains') return cellVal.includes(lowerVal);
-                if (filter.condition === 'starts') return cellVal.startsWith(lowerVal);
-                return true;
-            });
-        }
+
+    // 2. Logic Filter (AND/OR tuần tự)
+    filtered = filtered.filter(row => {
+        let result = true; 
+        queryConfig.filters.forEach((filter, index) => {
+            const isMatch = checkCondition(row, filter);
+            if (index === 0) result = isMatch;
+            else if (filter.operator === 'AND') result = result && isMatch;
+            else if (filter.operator === 'OR') result = result || isMatch;
+        });
+        return result;
     });
+
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
-    setSelection({ start: {row: null, col: null}, end: {row: null, col: null}, isDragging: false });
-    setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
+    setCurrentPage(1); // Reset về trang 1
+    setView('table'); 
+    if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
 
+  // --- UI STATE HANDLERS ---
   const handleUndo = () => { if (history.past.length === 0) return; const prev = history.past[history.past.length - 1]; setHistory({ past: history.past.slice(0, -1), future: [{ config: { ...queryConfig }, result: { ...resultState } }, ...history.future] }); setQueryConfig(prev.config); setResultState(prev.result); };
   const handleRedo = () => { if (history.future.length === 0) return; const next = history.future[0]; setHistory({ past: [...history.past, { config: { ...queryConfig }, result: { ...resultState } }], future: history.future.slice(1) }); setQueryConfig(next.config); setResultState(next.result); };
   const handleMouseDown = (r, c) => setSelection({ start: { row: r, col: c }, end: { row: r, col: c }, isDragging: true });
   const handleMouseEnter = (r, c) => { if (selection.isDragging) setSelection(prev => ({ ...prev, end: { row: r, col: c } })); };
   useEffect(() => { const up = () => { if (selection.isDragging) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging]);
   const getSelectionRange = useCallback(() => { const { start, end } = selection; if (start.row === null) return null; return { minR: Math.min(start.row, end.row), maxR: Math.max(start.row, end.row), minC: Math.min(start.col, end.col), maxC: Math.max(start.col, end.col) }; }, [selection]);
-  const handleCopy = useCallback(() => { const rg = getSelectionRange(); if (!rg || !resultState.data.length) return; const rows = resultState.data.slice(rg.minR, rg.maxR + 1); const cols = resultState.visibleCols; const txt = rows.map(r => { const vals = []; for (let c = rg.minC; c <= rg.maxC; c++) vals.push(formatValue(r[cols[c]])); return vals.join('\t'); }).join('\n'); secureCopy(txt); }, [getSelectionRange, resultState]);
+  
+  const handleCopy = useCallback(() => { 
+      const rg = getSelectionRange(); 
+      if (!rg || !resultState.data.length) return; 
+      // Chỉ copy dữ liệu trong trang hiện tại để đảm bảo index đúng
+      const pageData = resultState.data.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+      const rows = pageData.slice(rg.minR, rg.maxR + 1); 
+      const cols = resultState.visibleCols; 
+      const txt = rows.map(r => { const vals = []; for (let c = rg.minC; c <= rg.maxC; c++) vals.push(formatValue(r[cols[c]])); return vals.join('\t'); }).join('\n'); 
+      secureCopy(txt); 
+  }, [getSelectionRange, resultState, currentPage]);
+
   useEffect(() => { const kd = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'c') { e.preventDefault(); handleCopy(); } }; window.addEventListener('keydown', kd); return () => window.removeEventListener('keydown', kd); }, [handleCopy]);
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
+
+  // DATA PHÂN TRANG
+  const currentTableData = useMemo(() => {
+      const start = (currentPage - 1) * ITEMS_PER_PAGE;
+      return resultState.data.slice(start, start + ITEMS_PER_PAGE);
+  }, [resultState.data, currentPage]);
+  
+  const totalPages = Math.ceil(resultState.data.length / ITEMS_PER_PAGE);
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
@@ -313,10 +355,18 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
           <div><h1 className="font-bold text-blue-900 leading-tight text-sm md:text-base">PKA MANAGEMENT</h1><p className="text-xs text-slate-500 hidden md:block">Hệ thống Tra cứu & Phân tích dữ liệu</p></div>
         </div>
         <div className="flex items-center gap-2 md:gap-4">
-            <button onClick={onChangeSource} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200 transition-colors"><Database size={14} /> <span className="hidden md:inline">Đổi nguồn dữ liệu</span></button>
+            <button onClick={onChangeSource} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200 transition-colors">
+                <Database size={14} /> <span className="hidden md:inline">Đổi nguồn</span>
+            </button>
             <button onClick={() => fetchGoogleSheetData()} className="p-2 text-blue-700 bg-blue-50 rounded hover:bg-blue-100" title="Tải lại"><RefreshCw size={18} /></button>
-            <div className="hidden md:flex items-center gap-2 bg-slate-50 rounded p-1"><button onClick={handleUndo} disabled={history.past.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Undo size={18} /></button><button onClick={handleRedo} disabled={history.future.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Redo size={18} /></button></div>
-            <div className="flex items-center gap-2">{user.imageUrl && <img src={user.imageUrl} alt="Avatar" className="w-8 h-8 rounded-full" />}<button onClick={onLogout} className="text-slate-400 hover:text-red-500 ml-2" title="Đăng xuất"><LogOut size={18} /></button></div>
+            <div className="hidden md:flex items-center gap-2 bg-slate-50 rounded p-1">
+                <button onClick={handleUndo} disabled={history.past.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Undo size={18} /></button>
+                <button onClick={handleRedo} disabled={history.future.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Redo size={18} /></button>
+            </div>
+            <div className="flex items-center gap-2">
+                {user.imageUrl && <img src={user.imageUrl} alt="Avatar" className="w-8 h-8 rounded-full" />}
+                <button onClick={onLogout} className="text-slate-400 hover:text-red-500 ml-2" title="Đăng xuất"><LogOut size={18} /></button>
+            </div>
         </div>
       </header>
 
@@ -349,13 +399,15 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                             </div>
                         </div>
                         <div className="flex flex-col gap-2">
-                            <div className="flex justify-between items-center"><span className="text-xs font-semibold uppercase text-slate-500">Điều kiện chi tiết (AND)</span><button onClick={addFilterCondition} className="text-xs flex items-center gap-1 text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition-colors"><Plus size={14} /> Thêm điều kiện</button></div>
+                            <div className="flex justify-between items-center"><span className="text-xs font-semibold uppercase text-slate-500">Điều kiện chi tiết</span><button onClick={addFilterCondition} className="text-xs flex items-center gap-1 text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition-colors"><Plus size={14} /> Thêm điều kiện</button></div>
                             <div className="max-h-48 overflow-y-auto pr-1 space-y-2">
                                 {queryConfig.filters.map((filter, idx) => (
                                     <div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0">
-                                        <span className="text-slate-400 font-mono text-xs w-4 hidden md:inline">{idx + 1}.</span>
-                                        <div onClick={() => openColumnModal('filter', filter.id)} className="w-full md:w-1/3 border border-slate-300 rounded px-3 py-2 cursor-pointer hover:border-blue-500 bg-white flex justify-between items-center"><span className={`truncate ${!filter.column ? 'text-slate-400' : 'text-slate-800'}`}>{filter.column || "(Chọn cột)"}</span><ChevronDown size={14} className="text-slate-400"/></div>
-                                        <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}><option value="contains">Chứa</option><option value="equals">Bằng tuyệt đối</option><option value="starts">Bắt đầu với</option></select>
+                                        <div className="flex items-center gap-1">
+                                            {idx > 0 ? (<select className="border border-slate-300 bg-slate-100 rounded px-1 py-2 text-xs font-bold w-16" value={filter.operator} onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}><option value="AND">VÀ</option><option value="OR">HOẶC</option></select>) : <span className="text-slate-400 font-mono text-xs w-16 text-center">Bắt đầu</span>}
+                                        </div>
+                                        <div onClick={() => openColumnModal('filter', filter.id)} className="flex-1 border border-slate-300 rounded px-3 py-2 cursor-pointer hover:border-blue-500 bg-white flex justify-between items-center"><span className={`truncate ${!filter.column ? 'text-slate-400' : 'text-slate-800'}`}>{filter.column || "(Chọn cột)"}</span><ChevronDown size={14} className="text-slate-400"/></div>
+                                        <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}><option value="contains">Chứa</option><option value="not_contains">Không chứa</option><option value="equals">Bằng tuyệt đối</option><option value="not_equals">Khác</option><option value="starts">Bắt đầu với</option><option value="greater">Lớn hơn</option><option value="less">Nhỏ hơn</option></select>
                                         <input type="text" className="flex-1 border border-slate-300 rounded px-3 py-2 w-full" placeholder="Giá trị..." value={filter.value} onChange={(e) => updateFilter(filter.id, 'value', e.target.value)} />
                                         <button onClick={() => removeFilterCondition(filter.id)} className="text-red-400 hover:text-red-600 p-1 self-end md:self-center"><Trash2 size={16} /></button>
                                     </div>
@@ -379,9 +431,21 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                  <div className="flex gap-2"><button onClick={() => setView('table')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'table' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><TableIcon size={16} /> Kết Quả</button><button onClick={() => setView('analytics')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'analytics' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><ChartIcon size={16} /> Phân tích</button></div>
                  {resultState.isExecuted && view === 'table' && (<div className="flex items-center gap-2 pb-1 overflow-x-auto"><span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap">{resultState.data.length} dòng</span><div className="h-4 w-px bg-slate-300"></div><button onClick={handleCopy} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> Copy</button><button onClick={() => exportToExcelXML(resultState.data, resultState.visibleCols, 'KetQua.xls')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button></div>)}
             </div>
-            <div className="flex-1 overflow-hidden relative">
+            <div className="flex-1 overflow-hidden relative flex flex-col">
                 {!resultState.isExecuted ? (<div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 p-4 text-center"><Search size={64} className="mb-4 opacity-20" /><p className="text-lg font-medium">Vui lòng thiết lập điều kiện và chạy truy vấn</p></div>) : (
-                    view === 'table' ? (<div className="h-full w-full overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden cursor-grab active:cursor-grabbing"><span className="truncate" title={col}>{col}</span><GripVertical size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" /></div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} /></th>))}</tr></thead><tbody>{resultState.data.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{rIdx + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>) : ( <OnDemandAnalytics data={resultState.data} /> )
+                    view === 'table' ? (
+                        <>
+                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden cursor-grab active:cursor-grabbing"><span className="truncate" title={col}>{col}</span><GripVertical size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" /></div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} /></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(currentPage - 1) * ITEMS_PER_PAGE + rIdx + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
+                            {/* PHÂN TRANG CONTROL */}
+                            <div className="bg-white border-t border-slate-200 p-2 flex justify-between items-center">
+                                <span className="text-xs text-slate-500">Trang {currentPage} / {totalPages}</span>
+                                <div className="flex gap-2">
+                                    <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowLeft size={16}/></button>
+                                    <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowRight size={16}/></button>
+                                </div>
+                            </div>
+                        </>
+                    ) : ( <OnDemandAnalytics data={resultState.data} /> )
                 )}
             </div>
         </div>
@@ -392,9 +456,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   );
 };
 
+// --- COMPONENT PHÂN TÍCH (Giữ nguyên) ---
 const OnDemandAnalytics = ({ data }) => {
     const [activeCharts, setActiveCharts] = useState([]);
-    
     const stats = useMemo(() => {
         if (data.length === 0) return {};
         const keys = Object.keys(data[0]);
@@ -404,112 +468,55 @@ const OnDemandAnalytics = ({ data }) => {
         const colStatus = findKey('Trạng thái') || findKey('Status');
         const colGender = findKey('Giới tính') || findKey('Phái');
         const colMethod = findKey('Hình thức xét tuyển') || findKey('Xét tuyển');
-        const colArea = findKey('Khu vực') || findKey('KV');
-        const colParty = findKey('Ngày kết nạp Đảng') || findKey('Ngày vào Đảng');
-        const colMajor = findKey('Ngành') || findKey('Chương trình') || keys[2];
-        const colCourse = findKey('Khoá') || findKey('Khóa đào tạo');
-
-        const counts = { class: {}, status: {}, gender: {}, method: {}, area: {}, party: {}, major: {}, course: {} };
+        const colArea = findKey('Khu vực');
+        const colCourse = findKey('Khoá');
+        const colScore = findKey('Tổng điểm') || findKey('Điểm xét tuyển');
+        
+        const counts = { class: {}, status: {}, gender: {}, area: {}, major: {}, course: {}, majorGender: {}, scores: [] };
 
         data.forEach(item => {
-            counts.class[item[colClass] || 'Khác'] = (counts.class[item[colClass] || 'Khác'] || 0) + 1;
-            counts.major[item[colMajor] || 'Khác'] = (counts.major[item[colMajor] || 'Khác'] || 0) + 1;
-            if(colStatus) counts.status[item[colStatus] || 'N/A'] = (counts.status[item[colStatus] || 'N/A'] || 0) + 1;
-            if(colGender) counts.gender[item[colGender] || 'N/A'] = (counts.gender[item[colGender] || 'N/A'] || 0) + 1;
-            if(colMethod) counts.method[item[colMethod] || 'N/A'] = (counts.method[item[colMethod] || 'N/A'] || 0) + 1;
-            if(colArea) counts.area[item[colArea] || 'N/A'] = (counts.area[item[colArea] || 'N/A'] || 0) + 1;
-            if(colCourse) counts.course[item[colCourse] || 'N/A'] = (counts.course[item[colCourse] || 'N/A'] || 0) + 1;
+            const cls = item[colClass] || 'Khác';
+            const mj = item['Ngành'] || 'Khác';
+            const sx = item[colGender] || 'N/A';
             
-            if(colParty) {
-                const isMember = item[colParty] && item[colParty].trim().length > 4 ? 'Đảng viên' : 'Quần chúng';
-                counts.party[isMember] = (counts.party[isMember] || 0) + 1;
-            }
+            counts.class[cls] = (counts.class[cls] || 0) + 1;
+            if(colStatus) counts.status[item[colStatus] || 'N/A'] = (counts.status[item[colStatus] || 'N/A'] || 0) + 1;
+            if(colGender) counts.gender[sx] = (counts.gender[sx] || 0) + 1;
+            if(colMethod) counts.method[item[colMethod] || 'N/A'] = (counts.method[item[colMethod] || 'N/A'] || 0) + 1;
+            
+            if (!counts.majorGender[mj]) counts.majorGender[mj] = { name: mj, Nam: 0, Nữ: 0, Khác: 0 };
+            if (String(sx).toLowerCase().includes('nam')) counts.majorGender[mj].Nam++;
+            else if (String(sx).toLowerCase().includes('nữ')) counts.majorGender[mj].Nữ++;
+            else counts.majorGender[mj].Khác++;
         });
 
         const toArr = (obj) => Object.entries(obj).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
 
         return {
             class: toArr(counts.class).slice(0, 15), 
-            major: toArr(counts.major),
             status: toArr(counts.status),
             gender: toArr(counts.gender),
             method: toArr(counts.method),
-            area: toArr(counts.area),
-            party: toArr(counts.party),
-            course: toArr(counts.course),
-            hasCol: { status: !!colStatus, gender: !!colGender, method: !!colMethod, area: !!colArea, party: !!colParty, course: !!colCourse }
+            majorGender: Object.values(counts.majorGender),
+            hasCol: { status: !!colStatus, gender: !!colGender, method: !!colMethod }
         };
     }, [data]);
 
     const toggleChart = (id) => setActiveCharts(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
-    const COLORS = ['#003366', '#0055AA', '#0077EE', '#4499FF', '#88BBFF', '#CCDDEE', '#FFBB28', '#FF8042'];
+    const COLORS = ['#003366', '#FF8042', '#00C49F', '#FFBB28'];
 
     const CHART_CONFIG = [
-        { id: 'status', label: 'Trạng thái Sinh viên', type: 'pie', show: stats.hasCol?.status },
-        { id: 'gender', label: 'Cơ cấu Giới tính', type: 'pie', show: stats.hasCol?.gender },
-        { id: 'method', label: 'Hình thức Xét tuyển', type: 'bar', show: stats.hasCol?.method },
-        { id: 'area', label: 'Khu vực Ưu tiên', type: 'bar', show: stats.hasCol?.area },
-        { id: 'party', label: 'Tỉ lệ Đảng viên', type: 'pie', show: stats.hasCol?.party },
-        { id: 'course', label: 'Quy mô Khóa đào tạo', type: 'bar', show: stats.hasCol?.course },
-        { id: 'major', label: 'Phân bố theo Ngành', type: 'pie', show: true },
-        { id: 'class', label: 'Top Lớp đông nhất', type: 'bar', show: true },
+        { id: 'status', label: 'Trạng thái', type: 'pie', show: stats.hasCol?.status },
+        { id: 'gender', label: 'Giới tính', type: 'pie', show: stats.hasCol?.gender },
+        { id: 'majorGender', label: 'Giới tính/Ngành', type: 'stackedBar', show: stats.hasCol?.gender },
+        { id: 'method', label: 'Xét tuyển', type: 'bar', show: stats.hasCol?.method },
+        { id: 'class', label: 'Top Lớp', type: 'bar', show: true },
     ];
 
     return (
         <div className="h-full overflow-y-auto p-4 md:p-6 bg-slate-50">
-            <div className="mb-6">
-                <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">Thêm biểu đồ vào Báo cáo</h3>
-                <div className="flex flex-wrap gap-2">
-                    {CHART_CONFIG.filter(c => c.show).map(opt => (
-                        <button key={opt.id} onClick={() => toggleChart(opt.id)}
-                            className={`px-3 py-2 rounded-full text-sm font-medium border transition-all flex items-center gap-2
-                                ${activeCharts.includes(opt.id) ? 'bg-blue-900 text-white border-blue-900 shadow-md' : 'bg-white text-slate-600 border-slate-300 hover:border-blue-900 hover:text-blue-900'}`}>
-                            {activeCharts.includes(opt.id) ? <Check size={14} /> : <Plus size={14} />} {opt.label}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-10">
-                <AnimatePresence>
-                    {activeCharts.map(chartId => {
-                        const config = CHART_CONFIG.find(c => c.id === chartId);
-                        const chartData = stats[chartId];
-                        if (!config || !chartData) return null;
-
-                        return (
-                            <motion.div key={chartId} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                                className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col relative group">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h4 className="font-bold text-blue-900">{config.label}</h4>
-                                    <button onClick={() => toggleChart(chartId)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X size={18} /></button>
-                                </div>
-                                <div className="flex-1 min-h-0 text-xs">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        {config.type === 'pie' ? (
-                                            <PieChart>
-                                                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                                                    {chartData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                                                </Pie>
-                                                <RechartsTooltip />
-                                                <Legend />
-                                            </PieChart>
-                                        ) : (
-                                            <BarChart data={chartData} layout={chartData.length > 8 ? 'vertical' : 'horizontal'}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                                {chartData.length > 8 ? <XAxis type="number"/> : <XAxis dataKey="name" interval={0} angle={-15} textAnchor="end" height={60}/>}
-                                                {chartData.length > 8 ? <YAxis dataKey="name" type="category" width={100}/> : <YAxis />}
-                                                <RechartsTooltip cursor={{fill: '#f0f9ff'}} />
-                                                <Bar dataKey="value" fill="#003366" radius={[4, 4, 0, 0]} name="Số lượng" />
-                                            </BarChart>
-                                        )}
-                                    </ResponsiveContainer>
-                                </div>
-                            </motion.div>
-                        );
-                    })}
-                </AnimatePresence>
-            </div>
+            <div className="mb-6"><h3 className="text-sm font-bold text-slate-500 uppercase mb-3">Biểu đồ phân tích</h3><div className="flex flex-wrap gap-2">{CHART_CONFIG.filter(c => c.show).map(opt => (<button key={opt.id} onClick={() => toggleChart(opt.id)} className={`px-3 py-2 rounded-full text-xs md:text-sm font-medium border transition-all flex items-center gap-2 ${activeCharts.includes(opt.id) ? 'bg-blue-900 text-white border-blue-900 shadow-md' : 'bg-white text-slate-600 border-slate-300'}`}>{activeCharts.includes(opt.id) ? <Check size={14} /> : <Plus size={14} />} {opt.label}</button>))}</div></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-10"><AnimatePresence>{activeCharts.map(chartId => { const config = CHART_CONFIG.find(c => c.id === chartId); const chartData = stats[chartId]; if (!config || !chartData) return null; return (<motion.div key={chartId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-80 flex flex-col relative group"><div className="flex justify-between items-center mb-4"><h4 className="font-bold text-blue-900 text-sm md:text-base">{config.label}</h4><button onClick={() => toggleChart(chartId)} className="text-slate-300 hover:text-red-500"><X size={18} /></button></div><div className="flex-1 min-h-0 text-xs"><ResponsiveContainer width="100%" height="100%">{config.type === 'pie' ? (<PieChart><Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{chartData.map((_, index) => <Cell key={`cell-${index}`} fill={['#003366', '#0055AA', '#0077EE', '#4499FF', '#88BBFF'][index % 5]} />)}</Pie><RechartsTooltip /><Legend /></PieChart>) : config.type === 'stackedBar' ? (<BarChart data={chartData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis/><RechartsTooltip/><Legend/><Bar dataKey="Nam" stackId="a" fill="#003366" /><Bar dataKey="Nữ" stackId="a" fill="#FF8042" /><Bar dataKey="Khác" stackId="a" fill="#8884d8" /></BarChart>) : (<BarChart data={chartData} layout={chartData.length > 8 ? 'vertical' : 'horizontal'}><CartesianGrid strokeDasharray="3 3" vertical={false} />{chartData.length > 8 ? <XAxis type="number"/> : <XAxis dataKey="name" interval={0} angle={-15} textAnchor="end" height={60}/>}{chartData.length > 8 ? <YAxis dataKey="name" type="category" width={100}/> : <YAxis />}<RechartsTooltip cursor={{fill: '#f0f9ff'}} /><Bar dataKey="value" fill="#003366" radius={[4, 4, 0, 0]} name="Số lượng" /></BarChart>)}</ResponsiveContainer></div></motion.div>); })}</AnimatePresence></div>
         </div>
     );
 };
