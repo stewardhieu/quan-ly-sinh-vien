@@ -10,19 +10,19 @@ import {
 } from 'recharts';
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
-  Settings, LogOut, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
+  Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, Layers, GitMerge
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
 // 1. DÁN FIREBASE CONFIG CỦA BẠN VÀO ĐÂY
 const firebaseConfig = {
-  apiKey: "AIzaSyC17qmFY6d-1JsvuVsinMEc9E6VHRJCCuw",
-  authDomain: "quanlysv-10f32.firebaseapp.com",
-  projectId: "quanlysv-10f32",
-  storageBucket: "quanlysv-10f32.firebasestorage.app",
-  messagingSenderId: "446370494090",
-  appId: "1:446370494090:web:2a22e8f4fc3713ecb01f73"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // Khởi tạo Firebase
@@ -110,8 +110,11 @@ const LoginScreen = () => {
   const handleLogin = async () => {
     setLoading(true);
     try {
-        await signInWithPopup(auth, googleProvider);
-        // Auth state listener ở App sẽ tự xử lý chuyển trang
+        const result = await signInWithPopup(auth, googleProvider);
+        // QUAN TRỌNG: Lưu Access Token vào LocalStorage để dùng khi F5
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        const token = credential.accessToken;
+        localStorage.setItem('pka_google_token', token);
     } catch (error) {
         console.error("Firebase Login Error:", error);
         alert(`Đăng nhập thất bại: ${error.message}`);
@@ -144,7 +147,6 @@ const SetupScreen = ({ user, onConfig }) => {
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
-  // Tải lịch sử từ Firestore
   useEffect(() => {
     const loadHistory = async () => {
         if (!user) return;
@@ -178,6 +180,15 @@ const SetupScreen = ({ user, onConfig }) => {
     onConfig(sheetId, range);
   };
 
+  const deleteHistoryItem = async (e, idToDelete) => {
+      e.stopPropagation(); // Ngăn chặn việc click vào item để chọn
+      const updatedHistory = history.filter(h => h.id !== idToDelete);
+      setHistory(updatedHistory);
+      try {
+          await setDoc(doc(db, "users", user.uid), { history: updatedHistory }, { merge: true });
+      } catch (e) { console.error("Lỗi xóa lịch sử:", e); }
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-lg p-8 bg-white rounded-xl shadow-lg border border-slate-200">
@@ -196,11 +207,16 @@ const SetupScreen = ({ user, onConfig }) => {
               <p className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> Đã dùng gần đây {isLoadingHistory && "(Đang đồng bộ...)"}</p>
               <div className="space-y-2">
                   {history.map((h, idx) => (
-                      <div key={idx} onClick={() => { setSheetId(h.id); setRange(h.range); }} className="text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors">
-                          <div className="font-medium text-slate-700 truncate">{h.id}</div>
+                      <div key={idx} onClick={() => { setSheetId(h.id); setRange(h.range); }} className="group relative text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors">
+                          <div className="font-medium text-slate-700 truncate pr-6">{h.id}</div>
                           <div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div>
+                          {/* Nút xóa lịch sử */}
+                          <button onClick={(e) => deleteHistoryItem(e, h.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Trash2 size={14} />
+                          </button>
                       </div>
                   ))}
+                  {history.length === 0 && !isLoadingHistory && <p className="text-xs text-slate-300 italic">Chưa có lịch sử</p>}
               </div>
           </div>
 
@@ -224,7 +240,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
 
-  // Cấu trúc bộ lọc mới: Có thêm 'operator' cho logic AND/OR
   const [queryConfig, setQueryConfig] = useState({
     selectedCols: [],
     bulkFilter: { column: '', values: '' },
@@ -242,21 +257,15 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true); setLoadError(null);
     try {
-        // Lấy Token từ Auth Object của Firebase (token này cũng dùng được cho Google API nếu scope đúng)
-        // Tuy nhiên, Firebase Token và Google Access Token khác nhau.
-        // Mẹo: Với code này, ta dùng "accessToken" lấy từ provider credential
-        // Nhưng firebase auth object không lưu access token lâu dài.
-        // Để đơn giản và bảo mật, ta sẽ yêu cầu user nhập lại token hoặc dùng cách fetch công khai nếu file sheet public.
-        // SỬA ĐỔI QUAN TRỌNG: Khi dùng Firebase Auth, ta cần lấy Access Token từ Credential lúc đăng nhập hoặc getAccessToken.
-        // Ở đây để đơn giản, ta sẽ dùng token được lưu tạm (nếu có) hoặc báo lỗi.
-        // Thực tế: Cần Google Identity Services để lấy token mới. Nhưng ta sẽ thử dùng token từ user object truyền vào.
-        
-        const token = user.accessToken; // Lấy từ Dashboard props
-        if (!token) throw new Error("Thiếu Access Token. Hãy đăng nhập lại.");
+        // SỬA LỖI: Lấy token từ localStorage thay vì từ user object
+        // Token được lưu ở bước LoginScreen
+        const token = localStorage.getItem('pka_google_token');
+        if (!token) throw new Error("Thiếu Access Token. Vui lòng đăng xuất và đăng nhập lại.");
 
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${firebaseConfig.apiKey}`;
         const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
         
+        if (response.status === 401) throw new Error("Phiên làm việc hết hạn. Hãy đăng nhập lại.");
         if (!response.ok) throw new Error(response.statusText);
         
         const result = await response.json();
@@ -276,7 +285,10 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
     } catch (error) {
         console.error("Lỗi tải Sheet:", error);
-        setLoadError("Lỗi kết nối! File Sheet cần được Share cho email đăng nhập, hoặc token hết hạn.");
+        setLoadError(error.message || "Lỗi kết nối! File Sheet cần được Share cho email đăng nhập.");
+        if (error.message.includes("hết hạn") || error.message.includes("Token")) {
+            // Có thể tự động logout nếu muốn, ở đây chỉ báo lỗi
+        }
     }
     setLoading(false);
   }, [config, user]);
@@ -289,13 +301,12 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       else if (modalTarget.type === 'filter') updateFilter(modalTarget.id, 'column', colName);
   };
 
-  // --- LOGIC LỌC NÂNG CAO (AND / OR) ---
   const addFilterCondition = () => setQueryConfig(prev => ({ ...prev, filters: [...prev.filters, { id: Date.now(), column: '', condition: 'contains', value: '', operator: 'AND' }] }));
   const removeFilterCondition = (id) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.filter(f => f.id !== id) }));
   const updateFilter = (id, field, value) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.map(f => f.id === id ? { ...f, [field]: value } : f) }));
 
   const checkCondition = (row, filter) => {
-      if (!filter.column || !filter.value) return true; // Bỏ qua nếu chưa nhập
+      if (!filter.column || !filter.value) return true; 
       const cellVal = String(row[filter.column] || '').toLowerCase();
       const searchVal = filter.value.toLowerCase();
       switch (filter.condition) {
@@ -313,36 +324,25 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const runQuery = () => {
     setHistory(prev => ({ past: [...prev.past, { config: { ...queryConfig }, result: { ...resultState } }], future: [] }));
     let filtered = [...rawData];
-    
-    // 1. Lọc danh sách trước (Bulk) - Luôn là AND với phần còn lại
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const lookupValues = new Set(queryConfig.bulkFilter.values.split(/[\n,]+/).map(s => s.trim().toLowerCase()).filter(s => s !== ''));
       if (lookupValues.size > 0) filtered = filtered.filter(row => lookupValues.has(String(row[targetCol]).toLowerCase()));
     }
-
-    // 2. Lọc chi tiết (Logic AND / OR tuần tự)
-    // Logic: Duyệt qua từng dòng. Với mỗi dòng, tính toán biểu thức logic.
     filtered = filtered.filter(row => {
-        let result = true; // Giá trị khởi tạo
-        
+        let result = true; 
         queryConfig.filters.forEach((filter, index) => {
             const isMatch = checkCondition(row, filter);
-            if (index === 0) {
-                result = isMatch;
-            } else {
-                if (filter.operator === 'AND') result = result && isMatch;
-                else if (filter.operator === 'OR') result = result || isMatch;
-            }
+            if (index === 0) result = isMatch;
+            else if (filter.operator === 'AND') result = result && isMatch;
+            else if (filter.operator === 'OR') result = result || isMatch;
         });
         return result;
     });
-
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
     setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
 
-  // --- RESIZE & UI HANDLERS ---
   useEffect(() => {
     const handleMouseMove = (e) => { if (resizingRef.current) { const { col, startX, startWidth } = resizingRef.current; setColumnWidths(prev => ({ ...prev, [col]: Math.max(50, startWidth + (e.clientX - startX)) })); }};
     const handleMouseUp = () => { resizingRef.current = null; document.body.style.cursor = 'default'; };
@@ -355,7 +355,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const handleUndo = () => { if (history.past.length === 0) return; const prev = history.past[history.past.length - 1]; setHistory({ past: history.past.slice(0, -1), future: [{ config: { ...queryConfig }, result: { ...resultState } }, ...history.future] }); setQueryConfig(prev.config); setResultState(prev.result); };
   const handleRedo = () => { if (history.future.length === 0) return; const next = history.future[0]; setHistory({ past: [...history.past, { config: { ...queryConfig }, result: { ...resultState } }], future: history.future.slice(1) }); setQueryConfig(next.config); setResultState(next.result); };
   
-  // Selection
   const handleMouseDown = (r, c) => setSelection({ start: { row: r, col: c }, end: { row: r, col: c }, isDragging: true });
   const handleMouseEnter = (r, c) => { if (selection.isDragging) setSelection(prev => ({ ...prev, end: { row: r, col: c } })); };
   useEffect(() => { const up = () => { if (selection.isDragging) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging]);
@@ -423,23 +422,10 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                                 {queryConfig.filters.map((filter, idx) => (
                                     <div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0">
                                         <div className="flex items-center gap-1">
-                                            {idx > 0 ? (
-                                                <select className="border border-slate-300 bg-slate-100 rounded px-1 py-2 text-xs font-bold w-16" value={filter.operator} onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}>
-                                                    <option value="AND">VÀ</option>
-                                                    <option value="OR">HOẶC</option>
-                                                </select>
-                                            ) : <span className="text-slate-400 font-mono text-xs w-16 text-center">Bắt đầu</span>}
+                                            {idx > 0 ? (<select className="border border-slate-300 bg-slate-100 rounded px-1 py-2 text-xs font-bold w-16" value={filter.operator} onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}><option value="AND">VÀ</option><option value="OR">HOẶC</option></select>) : <span className="text-slate-400 font-mono text-xs w-16 text-center">Bắt đầu</span>}
                                         </div>
                                         <div onClick={() => openColumnModal('filter', filter.id)} className="flex-1 border border-slate-300 rounded px-3 py-2 cursor-pointer hover:border-blue-500 bg-white flex justify-between items-center"><span className={`truncate ${!filter.column ? 'text-slate-400' : 'text-slate-800'}`}>{filter.column || "(Chọn cột)"}</span><ChevronDown size={14} className="text-slate-400"/></div>
-                                        <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}>
-                                            <option value="contains">Chứa</option>
-                                            <option value="not_contains">Không chứa</option>
-                                            <option value="equals">Bằng tuyệt đối</option>
-                                            <option value="not_equals">Khác</option>
-                                            <option value="starts">Bắt đầu với</option>
-                                            <option value="greater">Lớn hơn</option>
-                                            <option value="less">Nhỏ hơn</option>
-                                        </select>
+                                        <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}><option value="contains">Chứa</option><option value="not_contains">Không chứa</option><option value="equals">Bằng tuyệt đối</option><option value="not_equals">Khác</option><option value="starts">Bắt đầu với</option><option value="greater">Lớn hơn</option><option value="less">Nhỏ hơn</option></select>
                                         <input type="text" className="flex-1 border border-slate-300 rounded px-3 py-2 w-full" placeholder="Giá trị..." value={filter.value} onChange={(e) => updateFilter(filter.id, 'value', e.target.value)} />
                                         <button onClick={() => removeFilterCondition(filter.id)} className="text-red-400 hover:text-red-600 p-1 self-end md:self-center"><Trash2 size={16} /></button>
                                     </div>
@@ -507,13 +493,11 @@ const OnDemandAnalytics = ({ data }) => {
             if(colArea) counts.area[item[colArea] || 'N/A'] = (counts.area[item[colArea] || 'N/A'] || 0) + 1;
             if(colCourse) counts.course[item[colCourse] || 'N/A'] = (counts.course[item[colCourse] || 'N/A'] || 0) + 1;
             
-            // Stacked Data: Ngành + Giới tính
             if (!counts.majorGender[mj]) counts.majorGender[mj] = { name: mj, Nam: 0, Nữ: 0, Khác: 0 };
             if (sx.toLowerCase().includes('nam')) counts.majorGender[mj].Nam++;
             else if (sx.toLowerCase().includes('nữ')) counts.majorGender[mj].Nữ++;
             else counts.majorGender[mj].Khác++;
 
-            // Scatter Data: Điểm
             if(colScore && item[colScore]) {
                 const score = parseFloat(item[colScore]);
                 if(!isNaN(score)) counts.scores.push({ x: mj, y: score, z: 1 });
@@ -561,18 +545,11 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [sheetConfig, setSheetConfig] = useState(null);
 
-  // AUTH LISTENER: Tự động giữ đăng nhập khi F5
   useEffect(() => {
       const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
           if (currentUser) {
-            // Lấy token để truyền xuống dashboard (Lưu ý: Token này có thể hết hạn sau 1h, cần logic refresh nếu app chạy lâu)
-            currentUser.getIdToken().then(token => {
-                 // Đây là Firebase ID Token. Nếu muốn Google Access Token để gọi Sheet API, 
-                 // ta cần lấy từ credential lúc login. Nhưng onAuthStateChanged không trả về credential.
-                 // -> Giải pháp: Lưu Google Access Token vào localStorage lúc login, ở đây chỉ lấy lại user.
-                 const savedSession = localStorage.getItem('pka_google_token');
-                 setUser({ ...currentUser, accessToken: savedSession, photoURL: currentUser.photoURL, displayName: currentUser.displayName });
-            });
+            const savedSession = localStorage.getItem('pka_google_token');
+            setUser({ ...currentUser, accessToken: savedSession });
           } else {
               setUser(null);
           }
@@ -580,12 +557,12 @@ export default function App() {
       return () => unsubscribe();
   }, []);
 
-  const handleLoginSuccess = (u) => { /* Logic đã chuyển vào LoginScreen và AuthListener */ };
+  const handleLoginSuccess = (u) => { };
   const handleConfig = (id, range) => setSheetConfig({ id, range });
-  const handleLogout = async () => { await signOut(auth); localStorage.removeItem('pka_google_token'); setSheetConfig(null); };
+  const handleLogout = async () => { await signOut(auth); localStorage.removeItem('pka_google_token'); setUser(null); setSheetConfig(null); };
   const handleChangeSource = () => setSheetConfig(null);
 
-  if (!user) return <LoginScreen />; // LoginScreen tự xử lý logic
+  if (!user) return <LoginScreen />;
   if (!sheetConfig) return <SetupScreen user={user} onConfig={handleConfig} />;
   return <Dashboard user={user} config={sheetConfig} onLogout={handleLogout} onChangeSource={handleChangeSource} />;
 }
