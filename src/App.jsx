@@ -9,7 +9,7 @@ import {
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
-  GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, Eraser
+  GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, Eraser, AlignJustify
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -31,8 +31,14 @@ const secureCopy = (text) => {
     document.body.appendChild(textArea);
     textArea.focus();
     textArea.select();
-    try { document.execCommand('copy'); document.body.removeChild(textArea); return true; } 
-    catch (err) { document.body.removeChild(textArea); return false; }
+    try {
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return successful;
+    } catch (err) {
+        document.body.removeChild(textArea);
+        return false;
+    }
 };
 
 const exportToExcelXML = (data, columns, filename) => {
@@ -178,19 +184,26 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
+  // Pagination & Display Options
+  const [itemsPerPage, setItemsPerPage] = useState(50); // Mặc định 50
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 50;
 
   const [isQueryBuilderOpen, setIsQueryBuilderOpen] = useState(true);
   const [colSearchTerm, setColSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
 
-  const [queryConfig, setQueryConfig] = useState({
-    selectedCols: [],
-    bulkFilter: { column: '', values: '' },
-    filters: [{ id: 1, column: '', condition: 'contains', value: '', operator: 'AND' }]
+  // Khởi tạo state từ LocalStorage
+  const [queryConfig, setQueryConfig] = useState(() => {
+      const saved = localStorage.getItem('pka_query_config');
+      return saved ? JSON.parse(saved) : {
+        selectedCols: [],
+        bulkFilter: { column: '', values: '' },
+        filters: [{ id: 1, column: '', condition: 'contains', value: '', operator: 'AND' }]
+      };
   });
+
+  useEffect(() => { localStorage.setItem('pka_query_config', JSON.stringify(queryConfig)); }, [queryConfig]);
 
   const [resultState, setResultState] = useState({ data: [], visibleCols: [], isExecuted: false });
   const [selection, setSelection] = useState({ start: { row: null, col: null }, end: { row: null, col: null }, isDragging: false });
@@ -217,7 +230,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
             return rowObject;
         });
         setRawData(formattedData); setAllColumns(headers); 
-        setQueryConfig(prev => ({ ...prev, selectedCols: headers.slice(0, 5) }));
+        setQueryConfig(prev => { if (prev.selectedCols.length === 0) return { ...prev, selectedCols: headers.slice(0, 5) }; return prev; });
         const initWidths = {}; headers.forEach(h => initWidths[h] = 150); setColumnWidths(initWidths);
 
     } catch (error) {
@@ -294,12 +307,44 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const handleMouseEnter = (r, c) => { if (selection.isDragging) setSelection(prev => ({ ...prev, end: { row: r, col: c } })); };
   useEffect(() => { const up = () => { if (selection.isDragging) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging]);
   const getSelectionRange = useCallback(() => { const { start, end } = selection; if (start.row === null) return null; return { minR: Math.min(start.row, end.row), maxR: Math.max(start.row, end.row), minC: Math.min(start.col, end.col), maxC: Math.max(start.col, end.col) }; }, [selection]);
-  const handleCopy = useCallback(() => { const rg = getSelectionRange(); if (!rg || !resultState.data.length) return; const pageData = resultState.data.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE); const rows = pageData.slice(rg.minR, rg.maxR + 1); const cols = resultState.visibleCols; const txt = rows.map(r => { const vals = []; for (let c = rg.minC; c <= rg.maxC; c++) vals.push(formatValue(r[cols[c]])); return vals.join('\t'); }).join('\n'); secureCopy(txt); }, [getSelectionRange, resultState, currentPage]);
+  
+  // COPY TOÀN BỘ (Dựa trên Filtered Data)
+  const handleCopyAll = () => {
+      if (!resultState.data.length) return;
+      const headers = resultState.visibleCols.join('\t');
+      const body = resultState.data.map(row => 
+          resultState.visibleCols.map(col => formatValue(row[col])).join('\t')
+      ).join('\n');
+      secureCopy(`${headers}\n${body}`);
+      alert(`Đã copy ${resultState.data.length} dòng!`);
+  };
+
+  const handleCopy = useCallback(() => { 
+      const rg = getSelectionRange(); if (!rg || !resultState.data.length) return; 
+      // Chỉ copy dữ liệu trong View hiện tại
+      const pageData = itemsPerPage === 'all' ? resultState.data : resultState.data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+      const rows = pageData.slice(rg.minR, rg.maxR + 1); const cols = resultState.visibleCols; 
+      const txt = rows.map(r => { const vals = []; for (let c = rg.minC; c <= rg.maxC; c++) vals.push(formatValue(r[cols[c]])); return vals.join('\t'); }).join('\n'); secureCopy(txt); 
+  }, [getSelectionRange, resultState, currentPage, itemsPerPage]);
+
   useEffect(() => { const kd = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'c') { e.preventDefault(); handleCopy(); } }; window.addEventListener('keydown', kd); return () => window.removeEventListener('keydown', kd); }, [handleCopy]);
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
-  const currentTableData = useMemo(() => { const start = (currentPage - 1) * ITEMS_PER_PAGE; return resultState.data.slice(start, start + ITEMS_PER_PAGE); }, [resultState.data, currentPage]);
-  const totalPages = Math.ceil(resultState.data.length / ITEMS_PER_PAGE);
+
+  // DATA PHÂN TRANG (Logic Mới)
+  const currentTableData = useMemo(() => {
+      if (itemsPerPage === 'all') return resultState.data;
+      const start = (currentPage - 1) * itemsPerPage;
+      return resultState.data.slice(start, start + itemsPerPage);
+  }, [resultState.data, currentPage, itemsPerPage]);
+  
+  const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(resultState.data.length / itemsPerPage);
+
+  // Khi đổi số lượng trang, reset về trang 1
+  const handleItemsPerPageChange = (val) => {
+      setItemsPerPage(val === 'all' ? 'all' : Number(val));
+      setCurrentPage(1);
+  };
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
@@ -380,14 +425,43 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         <div className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
             <div className="flex flex-wrap gap-2 justify-between items-center px-4 pt-2 border-b border-slate-200 bg-slate-50">
                  <div className="flex gap-2"><button onClick={() => setView('table')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'table' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><TableIcon size={16} /> Kết Quả</button><button onClick={() => setView('analytics')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'analytics' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><ChartIcon size={16} /> Phân tích</button></div>
-                 {resultState.isExecuted && view === 'table' && (<div className="flex items-center gap-2 pb-1 overflow-x-auto"><span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap">{resultState.data.length} dòng</span><div className="h-4 w-px bg-slate-300"></div><button onClick={handleCopy} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> Copy</button><button onClick={() => exportToExcelXML(resultState.data, resultState.visibleCols, 'KetQua.xls')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button></div>)}
+                 {resultState.isExecuted && view === 'table' && (
+                     <div className="flex items-center gap-2 pb-1 overflow-x-auto">
+                        <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap">{resultState.data.length} dòng</span>
+                        <div className="h-4 w-px bg-slate-300"></div>
+                        <button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> Copy Toàn bộ</button>
+                        <button onClick={() => exportToExcelXML(resultState.data, resultState.visibleCols, 'KetQua.xls')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
+                     </div>
+                 )}
             </div>
             <div className="flex-1 overflow-hidden relative flex flex-col">
                 {!resultState.isExecuted ? (<div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 p-4 text-center"><Search size={64} className="mb-4 opacity-20" /><p className="text-lg font-medium">Vui lòng thiết lập điều kiện và chạy truy vấn</p></div>) : (
                     view === 'table' ? (
                         <>
-                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden cursor-grab active:cursor-grabbing"><span className="truncate" title={col}>{col}</span><GripVertical size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" /></div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} /></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(currentPage - 1) * ITEMS_PER_PAGE + rIdx + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
-                            <div className="bg-white border-t border-slate-200 p-2 flex justify-between items-center"><span className="text-xs text-slate-500">Trang {currentPage} / {totalPages}</span><div className="flex gap-2"><button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowLeft size={16}/></button><button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowRight size={16}/></button></div></div>
+                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden cursor-grab active:cursor-grabbing"><span className="truncate" title={col}>{col}</span><GripVertical size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" /></div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} /></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
+                            {/* PHÂN TRANG CONTROL & VIEW MODE */}
+                            <div className="bg-white border-t border-slate-200 p-2 flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-slate-500">Hiển thị:</span>
+                                    <select className="text-xs border border-slate-300 rounded p-1" value={itemsPerPage} onChange={(e) => handleItemsPerPageChange(e.target.value)}>
+                                        <option value="50">50 dòng</option>
+                                        <option value="100">100 dòng</option>
+                                        <option value="500">500 dòng</option>
+                                        <option value="1000">1000 dòng</option>
+                                        <option value="all">Tất cả</option>
+                                    </select>
+                                    <span className="text-xs text-slate-500 ml-2">
+                                        {itemsPerPage !== 'all' ? `Trang ${currentPage} / ${totalPages}` : `Toàn bộ ${resultState.data.length} dòng`}
+                                    </span>
+                                </div>
+                                
+                                {itemsPerPage !== 'all' && (
+                                    <div className="flex gap-2">
+                                        <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowLeft size={16}/></button>
+                                        <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowRight size={16}/></button>
+                                    </div>
+                                )}
+                            </div>
                         </>
                     ) : ( <SuperAnalytics data={resultState.data} /> )
                 )}
@@ -400,7 +474,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   );
 };
 
-// --- CHART CARD COMPONENT (Modular) ---
+// --- CHART CARD COMPONENT ---
 const ChartCard = ({ config, data, onDelete }) => {
     const [type, setType] = useState(config.type || 'bar');
     const [xAxis, setXAxis] = useState(config.x);
