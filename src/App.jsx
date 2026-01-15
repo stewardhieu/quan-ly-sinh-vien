@@ -9,7 +9,7 @@ import {
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
-  GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, Eraser, AlignJustify
+  GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -31,14 +31,8 @@ const secureCopy = (text) => {
     document.body.appendChild(textArea);
     textArea.focus();
     textArea.select();
-    try {
-        const successful = document.execCommand('copy');
-        document.body.removeChild(textArea);
-        return successful;
-    } catch (err) {
-        document.body.removeChild(textArea);
-        return false;
-    }
+    try { document.execCommand('copy'); document.body.removeChild(textArea); return true; } 
+    catch (err) { document.body.removeChild(textArea); return false; }
 };
 
 const exportToExcelXML = (data, columns, filename) => {
@@ -184,16 +178,17 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
-  // Pagination & Display Options
-  const [itemsPerPage, setItemsPerPage] = useState(50); // Mặc định 50
+  // Sort Config State
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
+
   const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
 
   const [isQueryBuilderOpen, setIsQueryBuilderOpen] = useState(true);
   const [colSearchTerm, setColSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
 
-  // Khởi tạo state từ LocalStorage
   const [queryConfig, setQueryConfig] = useState(() => {
       const saved = localStorage.getItem('pka_query_config');
       return saved ? JSON.parse(saved) : {
@@ -281,12 +276,39 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const runQuery = () => {
     setHistory(prev => ({ past: [...prev.past, { config: { ...queryConfig }, result: { ...resultState } }], future: [] }));
     let filtered = [...rawData];
+    let orderedData = [];
+
+    // LOGIC MỚI: Ưu tiên giữ thứ tự Paste (Gom nhóm & Sắp xếp lại)
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,]+/); 
-      const lookupValues = new Set(rawValues.map(s => s.trim().toLowerCase()).filter(s => s !== ''));
-      if (lookupValues.size > 0) filtered = filtered.filter(row => lookupValues.has(String(row[targetCol]).trim().toLowerCase()));
+      // Lấy danh sách duy nhất để tìm kiếm, nhưng giữ nguyên thứ tự xuất hiện
+      const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim().toLowerCase()).filter(s => s !== ''))];
+      
+      if (uniquePasteOrder.length > 0) {
+          // 1. Tạo Map để tra cứu nhanh các dòng trong Excel khớp với giá trị
+          const rowMap = new Map(); // Key: value, Value: [rows]
+          
+          filtered.forEach(row => {
+              const cellVal = String(row[targetCol]).trim().toLowerCase();
+              if (uniquePasteOrder.includes(cellVal)) {
+                  if (!rowMap.has(cellVal)) rowMap.set(cellVal, []);
+                  rowMap.get(cellVal).push(row);
+              }
+          });
+
+          // 2. Nhặt dữ liệu ra theo đúng thứ tự của uniquePasteOrder
+          uniquePasteOrder.forEach(val => {
+              if (rowMap.has(val)) {
+                  orderedData.push(...rowMap.get(val));
+              }
+          });
+          
+          filtered = orderedData; // Gán lại kết quả đã sắp xếp
+      }
     }
+
+    // Sau đó mới lọc theo điều kiện chi tiết (Logic Filter)
     filtered = filtered.filter(row => {
         let result = true; 
         queryConfig.filters.forEach((filter, index) => {
@@ -297,8 +319,11 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         });
         return result;
     });
+
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
-    setCurrentPage(1); setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
+    setCurrentPage(1); 
+    setSortConfig({ key: null, direction: null }); // Reset sort khi chạy query mới
+    setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
 
   const handleUndo = () => { if (history.past.length === 0) return; const prev = history.past[history.past.length - 1]; setHistory({ past: history.past.slice(0, -1), future: [{ config: { ...queryConfig }, result: { ...resultState } }, ...history.future] }); setQueryConfig(prev.config); setResultState(prev.result); };
@@ -308,21 +333,17 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   useEffect(() => { const up = () => { if (selection.isDragging) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging]);
   const getSelectionRange = useCallback(() => { const { start, end } = selection; if (start.row === null) return null; return { minR: Math.min(start.row, end.row), maxR: Math.max(start.row, end.row), minC: Math.min(start.col, end.col), maxC: Math.max(start.col, end.col) }; }, [selection]);
   
-  // COPY TOÀN BỘ (Dựa trên Filtered Data)
   const handleCopyAll = () => {
       if (!resultState.data.length) return;
       const headers = resultState.visibleCols.join('\t');
-      const body = resultState.data.map(row => 
-          resultState.visibleCols.map(col => formatValue(row[col])).join('\t')
-      ).join('\n');
+      const body = resultState.data.map(row => resultState.visibleCols.map(col => formatValue(row[col])).join('\t')).join('\n');
       secureCopy(`${headers}\n${body}`);
-      alert(`Đã copy ${resultState.data.length} dòng!`);
+      alert(`Đã copy toàn bộ ${resultState.data.length} dòng!`);
   };
 
   const handleCopy = useCallback(() => { 
       const rg = getSelectionRange(); if (!rg || !resultState.data.length) return; 
-      // Chỉ copy dữ liệu trong View hiện tại
-      const pageData = itemsPerPage === 'all' ? resultState.data : resultState.data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+      const pageData = itemsPerPage === 'all' ? sortedData : sortedData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
       const rows = pageData.slice(rg.minR, rg.maxR + 1); const cols = resultState.visibleCols; 
       const txt = rows.map(r => { const vals = []; for (let c = rg.minC; c <= rg.maxC; c++) vals.push(formatValue(r[cols[c]])); return vals.join('\t'); }).join('\n'); secureCopy(txt); 
   }, [getSelectionRange, resultState, currentPage, itemsPerPage]);
@@ -331,16 +352,47 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
 
-  // DATA PHÂN TRANG (Logic Mới)
-  const currentTableData = useMemo(() => {
-      if (itemsPerPage === 'all') return resultState.data;
-      const start = (currentPage - 1) * itemsPerPage;
-      return resultState.data.slice(start, start + itemsPerPage);
-  }, [resultState.data, currentPage, itemsPerPage]);
-  
-  const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(resultState.data.length / itemsPerPage);
+  // HANDLE SORT
+  const handleSort = (key) => {
+      let direction = 'asc';
+      if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+      else if (sortConfig.key === key && sortConfig.direction === 'desc') direction = null; // Reset to default
+      setSortConfig({ key, direction });
+  };
 
-  // Khi đổi số lượng trang, reset về trang 1
+  // DATA ĐÃ SẮP XẾP
+  const sortedData = useMemo(() => {
+      let data = [...resultState.data];
+      if (sortConfig.key && sortConfig.direction) {
+          data.sort((a, b) => {
+              const aVal = String(a[sortConfig.key] || '');
+              const bVal = String(b[sortConfig.key] || '');
+              
+              // Thử so sánh số
+              const aNum = parseFloat(aVal);
+              const bNum = parseFloat(bVal);
+              
+              if (!isNaN(aNum) && !isNaN(bNum)) {
+                  return sortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum;
+              }
+              // So sánh chuỗi
+              return sortConfig.direction === 'asc' 
+                  ? aVal.localeCompare(bVal, 'vi') 
+                  : bVal.localeCompare(aVal, 'vi');
+          });
+      }
+      return data;
+  }, [resultState.data, sortConfig]);
+
+  // DATA PHÂN TRANG (Dựa trên Sorted Data)
+  const currentTableData = useMemo(() => {
+      if (itemsPerPage === 'all') return sortedData;
+      const start = (currentPage - 1) * itemsPerPage;
+      return sortedData.slice(start, start + itemsPerPage);
+  }, [sortedData, currentPage, itemsPerPage]);
+  
+  const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(sortedData.length / itemsPerPage);
+
   const handleItemsPerPageChange = (val) => {
       setItemsPerPage(val === 'all' ? 'all' : Number(val));
       setCurrentPage(1);
@@ -438,7 +490,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                 {!resultState.isExecuted ? (<div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 p-4 text-center"><Search size={64} className="mb-4 opacity-20" /><p className="text-lg font-medium">Vui lòng thiết lập điều kiện và chạy truy vấn</p></div>) : (
                     view === 'table' ? (
                         <>
-                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden cursor-grab active:cursor-grabbing"><span className="truncate" title={col}>{col}</span><GripVertical size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" /></div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} /></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
+                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} onClick={() => handleSort(col)} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors cursor-pointer" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden"><span className="truncate" title={col}>{col}</span>{sortConfig.key === col ? (sortConfig.direction === 'asc' ? <ArrowUp size={12} className="text-blue-600"/> : <ArrowDown size={12} className="text-blue-600"/>) : <ArrowUpDown size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />}</div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} onClick={(e) => e.stopPropagation()}/></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
                             {/* PHÂN TRANG CONTROL & VIEW MODE */}
                             <div className="bg-white border-t border-slate-200 p-2 flex justify-between items-center">
                                 <div className="flex items-center gap-2">
@@ -451,7 +503,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                                         <option value="all">Tất cả</option>
                                     </select>
                                     <span className="text-xs text-slate-500 ml-2">
-                                        {itemsPerPage !== 'all' ? `Trang ${currentPage} / ${totalPages}` : `Toàn bộ ${resultState.data.length} dòng`}
+                                        {itemsPerPage !== 'all' 
+                                            ? `${(currentPage - 1) * itemsPerPage + 1} - ${Math.min(currentPage * itemsPerPage, resultState.data.length)} / ${resultState.data.length}`
+                                            : `Toàn bộ ${resultState.data.length} dòng`}
                                     </span>
                                 </div>
                                 
