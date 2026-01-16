@@ -1,3 +1,7 @@
+{
+type: uploaded file
+fileName: App.jsx
+fullContent:
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
@@ -10,7 +14,7 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, ArrowUpDown, ArrowUp, ArrowDown,
-  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split, ListFilter, RotateCcw, CloudUpload, Cloud
+  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Save
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -329,8 +333,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   
-  // STATE MỚI CHO TÍNH NĂNG LƯU CẤU HÌNH
-  const [isConfigSaving, setIsConfigSaving] = useState(false);
+  // STATE CHO TÍNH NĂNG TỰ ĐỘNG LƯU
+  const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', 'unsaved'
+  const [isConfigLoaded, setIsConfigLoaded] = useState(false); // Chỉ auto-save khi đã load config xong
 
   // --- NEW STATES ---
   const [bulkFilterMode, setBulkFilterMode] = useState('exact'); 
@@ -347,7 +352,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
 
-  // NÂNG CẤP: Chuyển state Charts lên Dashboard để không bị reset khi đổi tab
   const [charts, setCharts] = useState(() => {
       const saved = localStorage.getItem('pka_dashboard_charts');
       return saved ? JSON.parse(saved) : [];
@@ -398,13 +402,15 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       setCharts(prev => prev.map(c => c.id === id ? { ...c, ...newConfig } : c));
   };
 
-  // --- LOGIC LƯU TRỮ CẤU HÌNH TRÊN SHEET ---
-  const saveConfigToSheet = async () => {
-      setIsConfigSaving(true);
+  // --- LOGIC LƯU TRỮ CẤU HÌNH ---
+  
+  // Hàm lưu thực sự (Gọi API)
+  const performSave = useCallback(async (currentCharts, currentQuery) => {
+      setSaveStatus('saving');
       try {
           const configData = {
-              charts: charts,
-              queryConfig: queryConfig,
+              charts: currentCharts,
+              queryConfig: currentQuery,
               updatedAt: new Date().toISOString()
           };
           const configString = JSON.stringify(configData);
@@ -433,13 +439,26 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               values: [[configString]]
           }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
 
-          alert("Đã lưu cấu hình lên Google Sheet thành công!");
+          setSaveStatus('saved');
       } catch (error) {
           console.error("Lỗi lưu cấu hình:", error);
-          alert("Lỗi khi lưu cấu hình. Hãy chắc chắn bạn đã cấp quyền 'Chỉnh sửa' (Edit) cho ứng dụng khi đăng nhập.");
+          setSaveStatus('unsaved'); // Để user biết lỗi
       }
-      setIsConfigSaving(false);
-  };
+  }, [config.id, user.accessToken]);
+
+  // AUTO SAVE EFFECT: Debounce 2 giây
+  useEffect(() => {
+      // Chỉ chạy auto-save nếu đã load config lần đầu (tránh ghi đè dữ liệu rỗng khi mới vào)
+      if (!isConfigLoaded) return;
+
+      setSaveStatus('unsaved'); // Đánh dấu là có thay đổi chưa lưu
+      
+      const timer = setTimeout(() => {
+          performSave(charts, queryConfig);
+      }, 2000); // Đợi 2 giây sau khi ngừng thao tác
+
+      return () => clearTimeout(timer); // Xóa timer nếu user tiếp tục thao tác
+  }, [charts, queryConfig, isConfigLoaded, performSave]);
 
   const loadConfigFromSheet = async () => {
       try {
@@ -449,13 +468,15 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
           
           if (rows && rows.length > 0 && rows[0][0]) {
               const savedConfig = JSON.parse(rows[0][0]);
+              // Cập nhật state mà không kích hoạt auto-save ngay lập tức
               if (savedConfig.charts) setCharts(savedConfig.charts);
               if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
               console.log("Đã tải cấu hình từ Sheet thành công.");
           }
       } catch (error) {
-          // 404 hoặc lỗi khác nghĩa là chưa có cấu hình, không sao cả
           console.log("Chưa có cấu hình trên Sheet hoặc không thể đọc.");
+      } finally {
+          setIsConfigLoaded(true); // Đánh dấu đã load xong, cho phép auto-save hoạt động từ giờ
       }
   };
 
@@ -646,19 +667,25 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const suggestionOptions = activeFilterObj ? getColumnOptions(activeFilterObj.column) : [];
   const suggestionInitialValue = activeFilterObj ? activeFilterObj.value : "";
 
+  // Render trạng thái lưu
+  const renderSaveStatus = () => {
+      if (!isConfigLoaded) return null;
+      if (saveStatus === 'saving') return <span className="text-xs text-blue-600 font-medium flex items-center gap-1"><RefreshCw size={12} className="animate-spin"/> Đang lưu...</span>;
+      if (saveStatus === 'unsaved') return <span className="text-xs text-slate-400 font-medium flex items-center gap-1">...</span>;
+      return <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle2 size={12}/> Đã lưu</span>;
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
       <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
         <div className="flex items-center gap-3"><div className="bg-blue-900 text-white p-2 rounded hidden md:block"><LayoutTemplate size={20} /></div><div><h1 className="font-bold text-blue-900 leading-tight text-sm md:text-base">PKA MANAGEMENT</h1><p className="text-xs text-slate-500 hidden md:block">Hệ thống Tra cứu & Phân tích dữ liệu</p></div></div>
         <div className="flex items-center gap-2 md:gap-4">
-            <button onClick={saveConfigToSheet} disabled={isConfigSaving} className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition-colors">
-                {isConfigSaving ? <RefreshCw size={14} className="animate-spin"/> : <CloudUpload size={14}/>} 
-                {isConfigSaving ? 'Đang lưu...' : 'Lưu cấu hình'}
-            </button>
-            {/* Nút lưu cấu hình Mobile */}
-            <button onClick={saveConfigToSheet} disabled={isConfigSaving} className="md:hidden p-2 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition-colors">
-                 {isConfigSaving ? <RefreshCw size={18} className="animate-spin"/> : <CloudUpload size={18}/>}
-            </button>
+            
+            {/* TRẠNG THÁI AUTO SAVE */}
+            <div className="bg-slate-50 border border-slate-200 rounded-full px-3 py-1 flex items-center gap-2">
+                <Cloud size={14} className="text-slate-400"/>
+                {renderSaveStatus()}
+            </div>
 
             <button onClick={onChangeSource} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200 transition-colors"><Database size={14} /> <span className="hidden md:inline">Đổi nguồn</span></button>
             <button onClick={() => fetchGoogleSheetData()} className="p-2 text-blue-700 bg-blue-50 rounded hover:bg-blue-100" title="Tải lại"><RefreshCw size={18} /></button>
@@ -942,4 +969,5 @@ export default function App() {
   if (!user) return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
   if (!sheetConfig) return <SetupScreen onConfig={handleConfig} />;
   return <Dashboard user={user} config={sheetConfig} onLogout={handleLogout} onChangeSource={handleChangeSource} />;
+}
 }
