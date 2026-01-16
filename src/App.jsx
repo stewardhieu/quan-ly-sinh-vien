@@ -10,7 +10,7 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, ArrowUpDown, ArrowUp, ArrowDown,
-  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split
+  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split, ListFilter
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -65,16 +65,11 @@ const exportToExcelXML = (data, columns, filename) => {
 const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Chọn cột dữ liệu" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const inputRef = useRef(null);
-    
-    // Keyboard Event Listener
     useEffect(() => { 
         if (isOpen) {
             if (inputRef.current) setTimeout(() => inputRef.current.focus(), 100); 
             setSearchTerm("");
-            
-            const handleKeyDown = (e) => {
-                if (e.key === 'Escape') onClose();
-            };
+            const handleKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
             window.addEventListener('keydown', handleKeyDown);
             return () => window.removeEventListener('keydown', handleKeyDown);
         }
@@ -100,7 +95,6 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
     const [selected, setSelected] = useState(new Set());
     const inputRef = useRef(null);
 
-    // Xử lý chuỗi nhập vào (Comma or Semicolon)
     useEffect(() => {
         if (isOpen) {
             const initSet = new Set(initialValue ? String(initialValue).split(/[,;]+/).map(s => s.trim()).filter(s => s) : []);
@@ -110,7 +104,6 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
         }
     }, [isOpen, initialValue]);
 
-    // Keyboard Listener
     useEffect(() => {
         if (!isOpen) return;
         const handleKeyDown = (e) => {
@@ -119,7 +112,7 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, selected]); // dependency on selected to ensure latest state
+    }, [isOpen, selected]);
 
     const filteredOptions = options.filter(opt => String(opt).toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 100);
 
@@ -130,7 +123,7 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
     };
 
     const handleConfirm = () => {
-        const valueString = Array.from(selected).join(', '); // Chuẩn hóa về dấu phẩy khi lưu
+        const valueString = Array.from(selected).join(', ');
         onSave(valueString);
         onClose();
     };
@@ -158,7 +151,6 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
                         <button onClick={() => setSelected(new Set())} className="text-red-500 hover:underline">Bỏ chọn hết</button>
                     </div>
                 </div>
-
                 <div className="flex-1 overflow-y-auto p-2">
                     {filteredOptions.length > 0 ? (
                         <div className="grid grid-cols-1 gap-1">
@@ -169,9 +161,72 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
                                 </div>
                             ))}
                         </div>
+                    ) : (<div className="p-8 text-center text-slate-400 text-sm">Không tìm thấy dữ liệu</div>)}
+                </div>
+            </motion.div>
+        </div>
+    );
+};
+
+// --- COMPONENT: ADVANCED SORT MODAL (Sắp xếp nâng cao) ---
+const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => {
+    const [localRules, setLocalRules] = useState(sortRules || []);
+
+    useEffect(() => {
+        if (isOpen) setLocalRules(sortRules || []);
+    }, [isOpen, sortRules]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (!isOpen) return;
+            if (e.key === 'Escape') onClose();
+            if (e.key === 'Enter') { onApply(localRules); onClose(); }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, localRules]);
+
+    const addRule = () => setLocalRules([...localRules, { column: columns[0], direction: 'asc' }]);
+    const removeRule = (idx) => setLocalRules(localRules.filter((_, i) => i !== idx));
+    const updateRule = (idx, field, val) => {
+        const newRules = [...localRules];
+        newRules[idx][field] = val;
+        setLocalRules(newRules);
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white w-full max-w-lg rounded-xl shadow-2xl flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="font-bold text-blue-900 flex items-center gap-2"><ListFilter size={18}/> Sắp xếp nâng cao</h3>
+                    <div className="flex gap-2">
+                        <button onClick={() => { onApply(localRules); onClose(); }} className="px-3 py-1 bg-blue-900 text-white text-xs rounded hover:bg-blue-800">Áp dụng</button>
+                        <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full"><X size={20}/></button>
+                    </div>
+                </div>
+                <div className="p-4 overflow-y-auto flex-1">
+                    {localRules.length === 0 ? (
+                        <div className="text-center text-slate-400 py-8">Chưa có điều kiện sắp xếp nào.</div>
                     ) : (
-                        <div className="p-8 text-center text-slate-400 text-sm">Không tìm thấy dữ liệu</div>
+                        <div className="space-y-3">
+                            {localRules.map((rule, idx) => (
+                                <div key={idx} className="flex gap-2 items-center bg-slate-50 p-2 rounded border border-slate-200">
+                                    <span className="text-xs font-bold text-slate-500 w-16">{idx === 0 ? 'Sắp xếp' : 'Rồi theo'}</span>
+                                    <select className="flex-1 text-sm border border-slate-300 rounded p-1.5" value={rule.column} onChange={(e) => updateRule(idx, 'column', e.target.value)}>
+                                        {columns.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                    <select className="w-28 text-sm border border-slate-300 rounded p-1.5" value={rule.direction} onChange={(e) => updateRule(idx, 'direction', e.target.value)}>
+                                        <option value="asc">Tăng dần (A-Z)</option>
+                                        <option value="desc">Giảm dần (Z-A)</option>
+                                    </select>
+                                    <button onClick={() => removeRule(idx)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={16}/></button>
+                                </div>
+                            ))}
+                        </div>
                     )}
+                    <button onClick={addRule} className="mt-4 flex items-center gap-1 text-xs font-bold text-blue-700 hover:bg-blue-50 px-3 py-2 rounded transition-colors"><Plus size={14}/> Thêm mức sắp xếp</button>
                 </div>
             </motion.div>
         </div>
@@ -276,7 +331,10 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [bulkFilterMode, setBulkFilterMode] = useState('exact'); 
   const [activeSuggestionFilter, setActiveSuggestionFilter] = useState(null);
 
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
+  // Sort: Use Array for Multi-column Sort
+  const [sortRules, setSortRules] = useState([]); 
+  const [isSortModalOpen, setIsSortModalOpen] = useState(false);
+
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
 
@@ -284,6 +342,12 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [colSearchTerm, setColSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
+
+  const [charts, setCharts] = useState(() => {
+      const saved = localStorage.getItem('pka_dashboard_charts');
+      return saved ? JSON.parse(saved) : [];
+  });
+  useEffect(() => localStorage.setItem('pka_dashboard_charts', JSON.stringify(charts)), [charts]);
 
   const [queryConfig, setQueryConfig] = useState(() => {
       const saved = localStorage.getItem('pka_query_config');
@@ -333,7 +397,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   useEffect(() => { fetchGoogleSheetData(); }, [fetchGoogleSheetData]);
 
-  // Shortcut Listener
   useEffect(() => {
       const handleShortcut = (e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runQuery();
@@ -370,7 +433,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const checkCondition = (row, filter) => {
       if (!filter.column || !filter.value) return true; 
       const cellVal = String(row[filter.column] || '').toLowerCase();
-      // FIX: Tách chuỗi bằng cả dấu phẩy và chấm phẩy
       const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
       
       return searchVals.some(searchVal => {
@@ -425,7 +487,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     });
 
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
-    setCurrentPage(1); setSortConfig({ key: null, direction: null }); 
+    setCurrentPage(1); setSortRules([]); 
     setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
 
@@ -446,8 +508,46 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
 
-  const handleSort = (key) => { let direction = 'asc'; if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc'; else if (sortConfig.key === key && sortConfig.direction === 'desc') direction = null; setSortConfig({ key, direction }); };
-  const sortedData = useMemo(() => { let data = [...resultState.data]; if (sortConfig.key && sortConfig.direction) { data.sort((a, b) => { const aVal = String(a[sortConfig.key] || ''); const bVal = String(b[sortConfig.key] || ''); const aNum = parseFloat(aVal); const bNum = parseFloat(bVal); if (!isNaN(aNum) && !isNaN(bNum)) { return sortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum; } return sortConfig.direction === 'asc' ? aVal.localeCompare(bVal, 'vi') : bVal.localeCompare(aVal, 'vi'); }); } return data; }, [resultState.data, sortConfig]);
+  // HANDLE SINGLE SORT (Quick Sort)
+  const handleQuickSort = (key) => {
+      // Nếu đã có rule cho key này ở đầu danh sách, đảo ngược. Nếu không, reset và tạo rule mới.
+      if (sortRules.length > 0 && sortRules[0].column === key) {
+          const newDir = sortRules[0].direction === 'asc' ? 'desc' : 'asc';
+          setSortRules([{ column: key, direction: newDir }]); // Override all for quick sort
+      } else {
+          setSortRules([{ column: key, direction: 'asc' }]);
+      }
+  };
+
+  const sortedData = useMemo(() => {
+      if (!sortRules || sortRules.length === 0) return resultState.data;
+      let data = [...resultState.data];
+      
+      data.sort((a, b) => {
+          for (const rule of sortRules) {
+              const aVal = String(a[rule.column] || '');
+              const bVal = String(b[rule.column] || '');
+              
+              // So sánh
+              let comparison = 0;
+              const aNum = parseFloat(aVal);
+              const bNum = parseFloat(bVal);
+              
+              if (!isNaN(aNum) && !isNaN(bNum)) {
+                  comparison = aNum - bNum;
+              } else {
+                  comparison = aVal.localeCompare(bVal, 'vi');
+              }
+
+              if (comparison !== 0) {
+                  return rule.direction === 'asc' ? comparison : -comparison;
+              }
+          }
+          return 0;
+      });
+      return data;
+  }, [resultState.data, sortRules]);
+
   const currentTableData = useMemo(() => { if (itemsPerPage === 'all') return sortedData; const start = (currentPage - 1) * itemsPerPage; return sortedData.slice(start, start + itemsPerPage); }, [sortedData, currentPage, itemsPerPage]);
   const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(sortedData.length / itemsPerPage);
   const handleItemsPerPageChange = (val) => { setItemsPerPage(val === 'all' ? 'all' : Number(val)); setCurrentPage(1); };
@@ -539,16 +639,24 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         <div className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
             <div className="flex flex-wrap gap-2 justify-between items-center px-4 pt-2 border-b border-slate-200 bg-slate-50">
                  <div className="flex gap-2"><button onClick={() => setView('table')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'table' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><TableIcon size={16} /> Kết Quả</button><button onClick={() => setView('analytics')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'analytics' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><ChartIcon size={16} /> Phân tích</button></div>
-                 {resultState.isExecuted && view === 'table' && (<div className="flex items-center gap-2 pb-1 overflow-x-auto"><span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap">{resultState.data.length} dòng</span><div className="h-4 w-px bg-slate-300"></div><button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> Copy Toàn bộ</button><button onClick={() => exportToExcelXML(resultState.data, resultState.visibleCols, 'KetQua.xls')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button></div>)}
+                 {resultState.isExecuted && view === 'table' && (
+                     <div className="flex items-center gap-2 pb-1 overflow-x-auto">
+                        <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap">{resultState.data.length} dòng</span>
+                        <div className="h-4 w-px bg-slate-300"></div>
+                        <button onClick={() => setIsSortModalOpen(true)} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><ListFilter size={16} /> Advanced Sort</button>
+                        <button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> Copy Toàn bộ</button>
+                        <button onClick={() => exportToExcelXML(resultState.data, resultState.visibleCols, 'KetQua.xls')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
+                     </div>
+                 )}
             </div>
             <div className="flex-1 overflow-hidden relative flex flex-col">
                 {!resultState.isExecuted ? (<div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 p-4 text-center"><Search size={64} className="mb-4 opacity-20" /><p className="text-lg font-medium">Vui lòng thiết lập điều kiện và chạy truy vấn</p></div>) : (
                     view === 'table' ? (
                         <>
-                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} onClick={() => handleSort(col)} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors cursor-pointer" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden"><span className="truncate" title={col}>{col}</span>{sortConfig.key === col ? (sortConfig.direction === 'asc' ? <ArrowUp size={12} className="text-blue-600"/> : <ArrowDown size={12} className="text-blue-600"/>) : <ArrowUpDown size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />}</div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} onClick={(e) => e.stopPropagation()}/></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
+                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} onClick={() => handleQuickSort(col)} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors cursor-pointer" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden"><span className="truncate" title={col}>{col}</span>{sortRules.length > 0 && sortRules[0].column === col ? (sortRules[0].direction === 'asc' ? <ArrowUp size={12} className="text-blue-600"/> : <ArrowDown size={12} className="text-blue-600"/>) : <ArrowUpDown size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />}</div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} onClick={(e) => e.stopPropagation()}/></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
                             <div className="bg-white border-t border-slate-200 p-2 flex justify-between items-center"><div className="flex items-center gap-2"><span className="text-xs text-slate-500">Hiển thị:</span><select className="text-xs border border-slate-300 rounded p-1" value={itemsPerPage} onChange={(e) => handleItemsPerPageChange(e.target.value)}><option value="50">50 dòng</option><option value="100">100 dòng</option><option value="500">500 dòng</option><option value="1000">1000 dòng</option><option value="all">Tất cả</option></select><span className="text-xs text-slate-500 ml-2">{itemsPerPage !== 'all' ? `${(currentPage - 1) * itemsPerPage + 1} - ${Math.min(currentPage * itemsPerPage, sortedData.length)} / ${sortedData.length}` : `Toàn bộ ${sortedData.length} dòng`}</span></div>{itemsPerPage !== 'all' && (<div className="flex gap-2"><button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowLeft size={16}/></button><button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowRight size={16}/></button></div>)}</div>
                         </>
-                    ) : ( <SuperAnalytics data={resultState.data} /> )
+                    ) : ( <SuperAnalytics data={resultState.data} charts={charts} setCharts={setCharts} /> )
                 )}
             </div>
         </div>
@@ -556,6 +664,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       
       <ColumnSelectorModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} columns={allColumns} onSelect={handleColumnSelect} />
       <MultiValueSelectModal isOpen={!!activeSuggestionFilter} onClose={() => setActiveSuggestionFilter(null)} options={suggestionOptions} initialValue={suggestionInitialValue} onSave={handleSuggestionSave} title="Chọn giá trị từ cột" />
+      <AdvancedSortModal isOpen={isSortModalOpen} onClose={() => setIsSortModalOpen(false)} columns={allColumns} sortRules={sortRules} onApply={setSortRules} />
     </div>
   );
 };
@@ -661,9 +770,8 @@ const ChartCard = ({ config, data, onDelete }) => {
 };
 
 // --- SUPER ANALYTICS DASHBOARD ---
-const SuperAnalytics = ({ data }) => {
+const SuperAnalytics = ({ data, charts, setCharts }) => {
     if (!data || data.length === 0) return <div className="p-10 text-center text-slate-400">Chưa có dữ liệu. Vui lòng chạy truy vấn.</div>;
-    const [charts, setCharts] = useState([]);
     const columns = Object.keys(data[0]);
 
     const addChart = (config) => setCharts(p => [...p, { id: Date.now(), ...config }]);
@@ -685,17 +793,27 @@ const SuperAnalytics = ({ data }) => {
             <div className="p-4 bg-white border-b border-slate-200">
                 <div className="flex flex-wrap gap-2 items-center">
                     <span className="text-xs font-bold text-slate-400 uppercase mr-2">Mẫu nhanh:</span>
-                    {templates.map(t => (<button key={t.label} onClick={() => addChart({ x: t.x, y: ['count'], type: t.type || 'bar' })} className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium hover:bg-blue-100 border border-blue-200 transition-colors">+ {t.label}</button>))}
+                    {templates.map(t => (
+                        <button key={t.label} onClick={() => addChart({ x: t.x, y: ['count'], type: t.type || 'bar' })} className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium hover:bg-blue-100 border border-blue-200 transition-colors">+ {t.label}</button>
+                    ))}
                     <div className="h-6 w-px bg-slate-200 mx-2"></div>
-                    <button onClick={() => addChart({ x: columns[0], y: ['count'], type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
+                    <button onClick={() => addChart({ x: columns[0], y: 'count', type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
                     {charts.length > 0 && <button onClick={() => setCharts([])} className="ml-auto text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 size={16}/></button>}
                 </div>
             </div>
+            
             <div className="flex-1 p-6 overflow-y-auto">
                 {charts.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300"><BarChart3 size={48} className="mb-2 opacity-50"/><p>Chọn mẫu biểu đồ ở trên để bắt đầu phân tích</p></div>
+                    <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                        <BarChart3 size={48} className="mb-2 opacity-50"/>
+                        <p>Chọn mẫu biểu đồ ở trên để bắt đầu phân tích</p>
+                    </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">{charts.map(chart => (<ChartCard key={chart.id} config={chart} data={data} onDelete={() => removeChart(chart.id)} />))}</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
+                        {charts.map(chart => (
+                            <ChartCard key={chart.id} config={chart} data={data} onDelete={() => removeChart(chart.id)} />
+                        ))}
+                    </div>
                 )}
             </div>
         </div>
