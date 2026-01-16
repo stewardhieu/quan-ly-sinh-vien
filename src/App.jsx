@@ -13,7 +13,6 @@ import {
   MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split, ListFilter, RotateCcw
 } from 'lucide-react';
 
-// ... (Giữ nguyên phần CẤU HÌNH, UTILS, EXPORT, CÁC MODAL COMPONENT cũ) ...
 // --- CẤU HÌNH ---
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
 
@@ -141,7 +140,6 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
                         <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full" title="Esc"><X size={20}/></button>
                     </div>
                 </div>
-                
                 <div className="p-3 bg-slate-50 border-b border-slate-100">
                     <div className="relative">
                         <Search size={16} className="absolute left-3 top-2.5 text-slate-400"/>
@@ -203,8 +201,8 @@ const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => 
                 <div className="p-4 border-b border-slate-100 flex justify-between items-center">
                     <h3 className="font-bold text-blue-900 flex items-center gap-2"><ListFilter size={18}/> Sắp xếp nâng cao</h3>
                     <div className="flex gap-2">
-                        <button onClick={() => { onApply(localRules); onClose(); }} className="px-3 py-1 bg-blue-900 text-white text-xs rounded hover:bg-blue-800">Áp dụng</button>
-                        <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full"><X size={20}/></button>
+                        <button onClick={() => { onApply(localRules); onClose(); }} className="px-3 py-1 bg-blue-900 text-white text-xs rounded hover:bg-blue-800">Áp dụng (Enter)</button>
+                        <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full" title="Esc"><X size={20}/></button>
                     </div>
                 </div>
                 <div className="p-4 overflow-y-auto flex-1">
@@ -234,7 +232,8 @@ const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => 
     );
 };
 
-// --- LOGIN & SETUP SCREENS (Giữ nguyên) ---
+// --- MAIN COMPONENTS ---
+
 const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const login = useGoogleLogin({
@@ -321,7 +320,6 @@ const SetupScreen = ({ onConfig }) => {
   );
 };
 
-// --- DASHBOARD ---
 const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [rawData, setRawData] = useState([]);
   const [allColumns, setAllColumns] = useState([]);
@@ -368,6 +366,24 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const tableRef = useRef(null);
   const resizingRef = useRef(null);
 
+  // LOGIC RESET TO DEFAULT
+  const resetFilters = () => {
+      const findCol = (keywords) => allColumns.find(c => keywords.some(k => c.toLowerCase().includes(k)));
+      
+      const defaultCols = [
+          findCol(['mã', 'mssv']), findCol(['họ tên', 'tên']), findCol(['khoá', 'khóa']), findCol(['khoa'])
+      ].filter(Boolean);
+
+      const defaultFilterCol = findCol(['mã', 'mssv']) || '';
+
+      setQueryConfig({
+          selectedCols: defaultCols.length > 0 ? defaultCols : allColumns.slice(0, 5),
+          bulkFilter: { column: '', values: '' },
+          filters: [{ id: Date.now(), column: defaultFilterCol, condition: 'contains', value: '', operator: 'AND' }]
+      });
+      alert("Đã làm mới bộ lọc về mặc định!");
+  };
+
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true); setLoadError(null);
     try {
@@ -385,7 +401,16 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
             return rowObject;
         });
         setRawData(formattedData); setAllColumns(headers); 
-        setQueryConfig(prev => { if (prev.selectedCols.length === 0) return { ...prev, selectedCols: headers.slice(0, 5) }; return prev; });
+        
+        // Auto select columns logic for initial load
+        setQueryConfig(prev => { 
+            if (prev.selectedCols.length === 0) {
+                const findCol = (keywords) => headers.find(c => keywords.some(k => c.toLowerCase().includes(k)));
+                const defaultCols = [findCol(['mã', 'mssv']), findCol(['họ tên', 'tên']), findCol(['khoá', 'khóa']), findCol(['khoa'])].filter(Boolean);
+                return { ...prev, selectedCols: defaultCols.length > 0 ? defaultCols : headers.slice(0, 5) }; 
+            }
+            return prev; 
+        });
         const initWidths = {}; headers.forEach(h => initWidths[h] = 150); setColumnWidths(initWidths);
 
     } catch (error) {
@@ -397,6 +422,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   useEffect(() => { fetchGoogleSheetData(); }, [fetchGoogleSheetData]);
 
+  // Shortcut Listener
   useEffect(() => {
       const handleShortcut = (e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runQuery();
@@ -421,20 +447,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const handleDragStart = (e, ci) => e.dataTransfer.setData("colIndex", ci);
   const handleDrop = (e, ti) => { const si = parseInt(e.dataTransfer.getData("colIndex")); if (si === ti) return; const nc = [...resultState.visibleCols]; const [mc] = nc.splice(si, 1); nc.splice(ti, 0, mc); setResultState(p => ({ ...p, visibleCols: nc })); };
 
-  // --- LOGIC RESET ---
-  const handleResetFilters = () => {
-      // Tìm các cột mặc định dựa trên tên
-      const defaultCols = allColumns.filter(c => ['msv','mã sinh viên','họ tên','họ và tên','khoá','khóa','khoa','lớp'].some(k => c.toLowerCase().includes(k)));
-      const msvCol = allColumns.find(c => c.toLowerCase().includes('mã')) || '';
-
-      setQueryConfig({
-          selectedCols: defaultCols.length > 0 ? defaultCols : allColumns.slice(0, 5),
-          bulkFilter: { column: msvCol, values: '' },
-          filters: [{ id: Date.now(), column: msvCol, condition: 'contains', value: '', operator: 'AND' }]
-      });
-      alert("Đã đặt lại bộ lọc về mặc định.");
-  };
-
   const addFilterCondition = () => setQueryConfig(prev => ({ ...prev, filters: [...prev.filters, { id: Date.now(), column: '', condition: 'contains', value: '', operator: 'AND' }] }));
   const removeFilterCondition = (id) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.filter(f => f.id !== id) }));
   const updateFilter = (id, field, value) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.map(f => f.id === id ? { ...f, [field]: value } : f) }));
@@ -447,7 +459,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const checkCondition = (row, filter) => {
       if (!filter.column || !filter.value) return true; 
       const cellVal = String(row[filter.column] || '').toLowerCase();
-      // FIX: Tách chuỗi bằng cả dấu phẩy và chấm phẩy
       const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
       
       return searchVals.some(searchVal => {
@@ -523,6 +534,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
 
+  // HANDLE SINGLE SORT
   const handleQuickSort = (key) => {
       if (sortRules.length > 0 && sortRules[0].column === key) {
           const newDir = sortRules[0].direction === 'asc' ? 'desc' : 'asc';
@@ -543,8 +555,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               let comparison = 0;
               const aNum = parseFloat(aVal);
               const bNum = parseFloat(bVal);
-              if (!isNaN(aNum) && !isNaN(bNum)) { comparison = aNum - bNum; } 
-              else { comparison = aVal.localeCompare(bVal, 'vi'); }
+              if (!isNaN(aNum) && !isNaN(bNum)) { comparison = aNum - bNum; } else { comparison = aVal.localeCompare(bVal, 'vi'); }
               if (comparison !== 0) { return rule.direction === 'asc' ? comparison : -comparison; }
           }
           return 0;
@@ -577,11 +588,12 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-5 flex flex-col gap-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2 cursor-pointer" onClick={() => setIsQueryBuilderOpen(!isQueryBuilderOpen)}>
-                 <h2 className="text-base md:text-lg font-bold text-blue-900 flex items-center gap-2"><Filter size={20} /> Advanced Query Builder {!isQueryBuilderOpen && <span className="text-xs font-normal text-slate-400 ml-2">(Mở rộng)</span>}</h2>
-                 <div className="flex items-center gap-2">
-                    <button onClick={(e) => { e.stopPropagation(); handleResetFilters(); }} className="mr-2 text-slate-400 hover:text-blue-700 flex items-center gap-1 text-xs px-2 py-1 hover:bg-slate-100 rounded"><RotateCcw size={14}/> Đặt lại</button>
-                    <span className="text-xs text-slate-500 hidden md:inline">{loading ? 'Đang tải...' : `Source: ${rawData.length} dòng`}</span>{isQueryBuilderOpen ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}
-                 </div>
+                 <h2 className="text-base md:text-lg font-bold text-blue-900 flex items-center gap-2">
+                    <Filter size={20} /> Advanced Query Builder 
+                    <button onClick={(e) => { e.stopPropagation(); resetFilters(); }} title="Làm mới bộ lọc" className="p-1 hover:bg-blue-100 rounded-full text-slate-400 hover:text-blue-900 ml-2"><RotateCcw size={16}/></button>
+                    {!isQueryBuilderOpen && <span className="text-xs font-normal text-slate-400 ml-2">(Mở rộng)</span>}
+                 </h2>
+                 <div className="flex items-center gap-2"><span className="text-xs text-slate-500 hidden md:inline">{loading ? 'Đang tải...' : `Source: ${rawData.length} dòng`}</span>{isQueryBuilderOpen ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}</div>
             </div>
 
             <AnimatePresence>
