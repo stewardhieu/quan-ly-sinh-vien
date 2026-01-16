@@ -16,7 +16,7 @@ import {
 // --- CẤU HÌNH ---
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
 const CONFIG_SHEET_NAME = '_PKA_CONFIG'; 
-const GLOBAL_HISTORY_FILE_NAME = '_PKA_GLOBAL_HISTORY_V1'; // Tên file "Sổ cái" lưu lịch sử trên Drive
+const GLOBAL_HISTORY_FILE_NAME = '_PKA_GLOBAL_HISTORY_V1'; 
 const AUTO_SAVE_DELAY = 5000;
 
 // --- UTILS ---
@@ -284,9 +284,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
       setLoading(false);
     },
     onError: (error) => { console.error("Login Failed:", error); alert("Đăng nhập thất bại."); },
-    
-    // ĐÃ XÓA DÒNG: prompt: 'consent' (Để không hỏi lại mỗi lần nữa)
-    // Google sẽ tự nhớ quyền Drive bạn đã cấp lần trước.
     scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
   });
 
@@ -313,15 +310,11 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
   const [range, setRange] = useState('Sheet1!A:Z');
   const [name, setName] = useState(''); 
   const [history, setHistory] = useState([]);
-  
-  // State quản lý việc sửa
-  const [editingId, setEditingId] = useState(null); // Lưu KEY của item đang sửa
-  
+  const [editingId, setEditingId] = useState(null); 
   const [checking, setChecking] = useState(false);
   const [syncingHistory, setSyncingHistory] = useState(false);
   const [drivePermissionError, setDrivePermissionError] = useState(false); 
   
-  // LOGIC ĐỒNG BỘ LỊCH SỬ TỪ GOOGLE DRIVE
   const syncHistoryWithDrive = useCallback(async () => {
     setSyncingHistory(true);
     setDrivePermissionError(false);
@@ -337,7 +330,9 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
             const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/Sheet1!A1:A1?key=${API_KEY}`;
             const readRes = await axios.get(readUrl, { headers: { Authorization: `Bearer ${user.accessToken}` } });
             if (readRes.data.values && readRes.data.values[0]) {
-                try { cloudHistory = JSON.parse(readRes.data.values[0][0]); } catch (e) {}
+                try {
+                    cloudHistory = JSON.parse(readRes.data.values[0][0]);
+                } catch (e) { console.error("Lỗi parse history từ cloud", e); }
             }
         } else {
             const createRes = await axios.post('https://sheets.googleapis.com/v4/spreadsheets', {
@@ -346,29 +341,42 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
             fileId = createRes.data.spreadsheetId;
         }
 
-        // Merge thông minh: Ưu tiên Cloud nếu Local ít hơn, nhưng giữ Local nếu mới cập nhật
         const localHistory = JSON.parse(localStorage.getItem('sheet_history_v2') || '[]');
+        const combined = [...localHistory, ...cloudHistory];
         
-        // Dùng Map để loại bỏ trùng lặp (ưu tiên cloud trước để lấy base, sau đó local đè lên nếu cần)
-        const historyMap = new Map();
-        [...cloudHistory, ...localHistory].forEach(item => {
-            historyMap.set(item.key, item);
-        });
+        const uniqueHistory = [];
+        const map = new Map();
+        for (const item of combined) {
+            if (!map.has(item.key)) {
+                map.set(item.key, true);
+                uniqueHistory.push(item);
+            }
+        }
         
-        const finalHistory = Array.from(historyMap.values()).slice(0, 20);
+        const finalHistory = uniqueHistory.slice(0, 20); 
 
         setHistory(finalHistory);
         localStorage.setItem('sheet_history_v2', JSON.stringify(finalHistory));
-        if (fileId) localStorage.setItem('pka_global_history_id', fileId);
+
+        if (fileId) {
+             const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/Sheet1!A1:A1?valueInputOption=RAW`;
+             await axios.put(updateUrl, { values: [[JSON.stringify(finalHistory)]] }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+             localStorage.setItem('pka_global_history_id', fileId); 
+        }
 
     } catch (error) {
-        console.error("Lỗi Drive:", error);
-        if (error.response && error.response.status === 403) setDrivePermissionError(true);
+        console.error("Lỗi đồng bộ lịch sử Drive:", error);
+        if (error.response && error.response.status === 403) {
+            setDrivePermissionError(true);
+        }
     }
     setSyncingHistory(false);
   }, [user.accessToken]);
 
-  useEffect(() => { syncHistoryWithDrive(); }, [syncHistoryWithDrive]);
+  useEffect(() => {
+      syncHistoryWithDrive();
+  }, [syncHistoryWithDrive]);
+
 
   const updateCloudHistory = async (newHistory) => {
       const fileId = localStorage.getItem('pka_global_history_id');
@@ -376,7 +384,7 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
           try {
              const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/Sheet1!A1:A1?valueInputOption=RAW`;
              await axios.put(updateUrl, { values: [[JSON.stringify(newHistory)]] }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
-          } catch(e) { console.error("Lỗi update cloud", e); }
+          } catch(e) { console.error("Lỗi cập nhật cloud history", e); }
       }
   };
 
@@ -387,25 +395,22 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
     const cleanRange = range.trim();
     const cleanName = name.trim();
 
-    // 1. Validate quyền truy cập Sheet trước
     try {
         const metadataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}?key=${API_KEY}`;
         await axios.get(metadataUrl, { headers: { Authorization: `Bearer ${user.accessToken}` } });
     } catch (error) {
         setChecking(false);
         if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-            alert("Hết phiên đăng nhập hoặc không có quyền. Vui lòng đăng nhập lại.");
+            alert("Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập Sheet này. Vui lòng đăng nhập lại.");
             onLogout();
             return;
         } else {
-             alert("ID Sheet không tồn tại. Vui lòng kiểm tra lại.");
+             alert("Không thể tìm thấy ID Sheet này. Vui lòng kiểm tra lại.");
              return;
         }
     }
 
     const uniqueKey = `${cleanId}-${cleanRange}`;
-    
-    // 2. Tạo Item mới
     const newItem = {
         key: uniqueKey,
         id: cleanId,
@@ -414,31 +419,14 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
         date: new Date().toLocaleDateString('vi-VN')
     };
 
-    // 3. XỬ LÝ DANH SÁCH LỊCH SỬ (Logic sửa lỗi update)
-    let newHistory = [...history];
-
-    if (editingId) {
-        // Nếu đang sửa: Xóa item cũ đi (dựa vào editingId - key cũ)
-        newHistory = newHistory.filter(h => h.key !== editingId);
-    }
-    
-    // Xóa tiếp nếu trùng key mới (trường hợp sửa ID thành ID của một cái đã có sẵn)
-    newHistory = newHistory.filter(h => h.key !== uniqueKey);
-
-    // Chèn item mới vào đầu danh sách
-    newHistory = [newItem, ...newHistory].slice(0, 20);
-
-    // 4. Lưu lại
+    // Tạo lịch sử mới (đưa item mới lên đầu)
+    const newHistory = [newItem, ...history.filter(h => h.key !== uniqueKey)].slice(0, 20);
     setHistory(newHistory);
     localStorage.setItem('sheet_history_v2', JSON.stringify(newHistory));
-    updateCloudHistory(newHistory); // Đồng bộ lên Drive ngay lập tức
+    updateCloudHistory(newHistory);
     
     setChecking(false);
-    
-    // Reset chế độ sửa
-    setEditingId(null); 
-    
-    // Chuyển sang Dashboard
+    // QUAN TRỌNG: Truyền tên mới sang Dashboard để nó ghi đè lên Sheet
     onConfig(cleanId, cleanRange, newItem.name);
   };
 
@@ -446,7 +434,6 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
       setSheetId(item.id);
       setRange(item.range);
       setName(item.name);
-      setEditingId(null); // Reset editing khi chỉ click xem
   };
 
   const deleteHistoryItem = (e, keyToDelete) => {
@@ -455,25 +442,14 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
       setHistory(newHistory);
       localStorage.setItem('sheet_history_v2', JSON.stringify(newHistory));
       updateCloudHistory(newHistory);
-      if (editingId === keyToDelete) {
-          setEditingId(null);
-          setSheetId(''); setRange(''); setName('');
-      }
   };
 
-  // Bắt đầu sửa: Load dữ liệu lên form và đánh dấu editingId
   const startEditing = (e, item) => {
       e.stopPropagation();
-      setEditingId(item.key); // Quan trọng: Đánh dấu đang sửa key này
+      setEditingId(item.key);
       setSheetId(item.id);
       setRange(item.range);
       setName(item.name);
-  };
-
-  // Hủy sửa
-  const cancelEditing = () => {
-      setEditingId(null);
-      setSheetId(''); setRange(''); setName('');
   };
 
   return (
@@ -491,74 +467,63 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
       <div className="w-full max-w-lg p-8 bg-white rounded-xl shadow-lg border border-slate-200">
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex justify-between items-center">
-              <label className="block text-sm font-medium text-slate-700">Thông tin kết nối</label>
-              {editingId && <button type="button" onClick={cancelEditing} className="text-xs text-red-500 hover:underline">Hủy sửa</button>}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Tên dữ liệu (Gợi nhớ)</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: K19 - CNTT (Tuỳ chọn)" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" />
           </div>
-          
-          <div className="relative">
-            <label className="text-xs text-slate-500 mb-1 block">Tên gợi nhớ (Hiển thị)</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: K19 - CNTT" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" />
-            <Pencil size={14} className="absolute right-3 top-9 text-slate-400"/>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Spreadsheet ID</label>
+            <input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID của Google Sheet..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none font-mono text-sm" />
           </div>
-          
-          <div className="grid grid-cols-1 gap-4">
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">Spreadsheet ID</label>
-                <input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID Sheet..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none font-mono text-sm" />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">Data Range (Tab)</label>
-                <input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="VD: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none font-mono text-sm" />
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Data Range (Tab)</label>
+            <input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="Ví dụ: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none font-mono text-sm" />
           </div>
 
-          <button type="submit" disabled={checking} className={`w-full py-2 rounded-lg font-medium flex justify-center items-center gap-2 mt-4 disabled:opacity-70 text-white transition-colors ${editingId ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-900 hover:bg-blue-800'}`}>
-            {checking ? <RefreshCw className="animate-spin w-4 h-4"/> : (editingId ? <Save className="w-4 h-4"/> : <Check className="w-4 h-4" />)} 
-            {checking ? 'Đang kiểm tra...' : (editingId ? 'Lưu thay đổi & Kết nối' : 'Kết nối Dữ liệu')}
+          <button type="submit" disabled={checking} className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4 disabled:opacity-70">
+            {checking ? <RefreshCw className="animate-spin w-4 h-4"/> : <Check className="w-4 h-4" />} {checking ? 'Đang kiểm tra...' : (editingId ? 'Cập nhật Dữ liệu' : 'Kết nối Dữ liệu')}
           </button>
         </form>
 
         <div className="mt-6 pt-4 border-t border-slate-100">
             <div className="flex justify-between items-center mb-3">
                 <p className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1"><History size={12}/> Lịch sử truy cập</p>
-                {syncingHistory && <span className="text-xs text-blue-500 flex items-center gap-1"><RefreshCw size={10} className="animate-spin"/> Đang đồng bộ...</span>}
+                {syncingHistory && <span className="text-xs text-blue-500 flex items-center gap-1"><RefreshCw size={10} className="animate-spin"/> Đang đồng bộ từ Drive...</span>}
             </div>
 
             {drivePermissionError && (
                 <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800 flex items-start gap-2">
                     <AlertCircle size={16} className="shrink-0 mt-0.5"/>
                     <div>
-                        <span className="font-bold">Thiếu quyền Drive:</span> Không thể đồng bộ lịch sử. <br/>
-                        <button onClick={onLogout} className="underline text-blue-700 font-bold mt-1">Đăng xuất & Cấp lại quyền</button>
+                        <span className="font-bold">Chưa đồng bộ được lịch sử:</span> Bạn cần cấp thêm quyền Google Drive. <br/>
+                        <button onClick={onLogout} className="underline text-blue-700 font-bold mt-1">Bấm vào đây để Đăng xuất & Đăng nhập lại</button>
                     </div>
                 </div>
             )}
             
             {history.length > 0 ? (
-                <div className="space-y-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                     {history.map((h) => (
-                        <div key={h.key} onClick={() => useHistoryItem(h)} className={`group relative p-3 bg-slate-50 hover:bg-blue-50 rounded-lg cursor-pointer border transition-all ${editingId === h.key ? 'border-orange-400 ring-1 ring-orange-400 bg-orange-50' : (sheetId === h.id && range === h.range ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-300')}`}>
+                        <div key={h.key} onClick={() => useHistoryItem(h)} className={`group relative p-3 bg-slate-50 hover:bg-blue-50 rounded-lg cursor-pointer border transition-all ${sheetId === h.id && range === h.range ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
                             <div className="flex justify-between items-start">
-                                <div className="font-bold text-blue-900 text-sm truncate pr-16 flex items-center gap-1">
+                                <div className="font-bold text-blue-900 text-sm truncate pr-6 flex items-center gap-1">
                                     {h.name}
+                                    <CloudCog size={12} className="text-blue-400" title="Đã đồng bộ Cloud"/>
                                 </div>
-                                <div className="text-[10px] text-slate-400 whitespace-nowrap flex items-center gap-1">
-                                    {h.date} <CloudCog size={10} className="text-blue-300" title="Đã đồng bộ"/>
-                                </div>
+                                <div className="text-[10px] text-slate-400 whitespace-nowrap">{h.date}</div>
                             </div>
-                            <div className="text-xs text-slate-500 mt-1 font-mono truncate w-3/4" title={h.id}>ID: {h.id}</div>
+                            <div className="text-xs text-slate-500 mt-1 font-mono truncate" title={h.id}>ID: {h.id.slice(0,8)}...</div>
                             <div className="text-xs text-slate-500 font-mono truncate">Tab: {h.range}</div>
                             
-                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 rounded backdrop-blur-sm shadow-sm p-0.5">
-                                <button onClick={(e) => startEditing(e, h)} className="p-1.5 text-slate-600 hover:text-orange-600 rounded hover:bg-orange-100" title="Sửa thông tin"><Pencil size={14} /></button>
-                                <button onClick={(e) => deleteHistoryItem(e, h.key)} className="p-1.5 text-slate-600 hover:text-red-600 rounded hover:bg-red-100" title="Xóa khỏi lịch sử"><Trash2 size={14} /></button>
+                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/80 rounded backdrop-blur-sm">
+                                <button onClick={(e) => startEditing(e, h)} className="p-1.5 text-slate-500 hover:text-blue-600 rounded hover:bg-blue-100" title="Sửa tên"><Pencil size={14} /></button>
+                                <button onClick={(e) => deleteHistoryItem(e, h.key)} className="p-1.5 text-slate-500 hover:text-red-600 rounded hover:bg-red-100" title="Xóa"><Trash2 size={14} /></button>
                             </div>
                         </div>
                     ))}
                 </div>
             ) : (
-                <div className="text-center text-slate-400 text-xs py-4 italic">Chưa có dữ liệu nào. Hãy nhập ID Sheet để bắt đầu.</div>
+                <div className="text-center text-slate-400 text-xs py-4">Chưa có dữ liệu nào.</div>
             )}
         </div>
       </div>
@@ -573,11 +538,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   
-  // TOAST STATE
   const [toastMsg, setToastMsg] = useState('');
   const [showToast, setShowToast] = useState(false);
 
-  // STATE CHO TÍNH NĂNG TỰ ĐỘNG LƯU
   const [saveStatus, setSaveStatus] = useState('saved'); 
   const [isConfigLoaded, setIsConfigLoaded] = useState(false); 
 
@@ -646,7 +609,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       setCharts(prev => prev.map(c => c.id === id ? { ...c, ...newConfig } : c));
   };
 
-  // --- LOGIC LƯU TRỮ CẤU HÌNH ---
   const performSave = useCallback(async (currentCharts, currentQuery) => {
       setSaveStatus('saving');
       try {
@@ -688,7 +650,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       }
   }, [config.id, config.name, user.accessToken]);
 
-  // AUTO SAVE EFFECT: Debounce 5 giây (ĐÃ ĐỔI TỪ 2s -> 5s)
   useEffect(() => {
       if (!isConfigLoaded) return;
       setSaveStatus('unsaved'); 
@@ -710,23 +671,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               if (savedConfig.charts) setCharts(savedConfig.charts);
               if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
               
-              // LOGIC ĐỒNG BỘ NGƯỢC: Cập nhật tên vào LocalStorage nếu trên Sheet có tên
-              if (savedConfig.meta && savedConfig.meta.name && savedConfig.meta.name !== config.name) {
-                 try {
-                     const history = JSON.parse(localStorage.getItem('sheet_history_v2') || '[]');
-                     const uniqueKey = `${config.id}-${config.range}`;
-                     // Cập nhật tên mới vào lịch sử local
-                     const updatedHistory = history.map(h => h.key === uniqueKey ? { ...h, name: savedConfig.meta.name } : h);
-                     // Nếu chưa có trong lịch sử (máy mới), thêm vào luôn
-                     if (!history.find(h => h.key === uniqueKey)) {
-                         updatedHistory.unshift({
-                             key: uniqueKey, id: config.id, range: config.range, name: savedConfig.meta.name, date: new Date().toLocaleDateString('vi-VN')
-                         });
-                     }
-                     localStorage.setItem('sheet_history_v2', JSON.stringify(updatedHistory));
-                     console.log("Đã đồng bộ tên từ Sheet về Local:", savedConfig.meta.name);
-                 } catch(e) {}
-              }
+              // ĐÃ XÓA LOGIC ĐỒNG BỘ NGƯỢC "NGUY HIỂM" TẠI ĐÂY
+              // Để tránh việc tên cũ trên sheet ghi đè tên mới vừa đặt ở SetupScreen
+              
               console.log("Đã tải cấu hình từ Sheet thành công.");
           }
       } catch (error) {
@@ -1156,63 +1103,6 @@ const ChartCard = ({ config, data, onDelete, onUpdate }) => {
             </div>
             <div className="flex-1 min-h-0 text-xs font-medium">{renderContent()}</div>
         </motion.div>
-    );
-};
-
-// --- SUPER ANALYTICS DASHBOARD ---
-const SuperAnalytics = ({ data, charts, setCharts, onUpdate }) => {
-    if (!data || data.length === 0) return <div className="p-10 text-center text-slate-400">Chưa có dữ liệu. Vui lòng chạy truy vấn.</div>;
-    const columns = Object.keys(data[0]);
-
-    const addChart = (config) => setCharts(p => [...p, { id: Date.now(), ...config }]);
-    const removeChart = (id) => setCharts(p => p.filter(c => c.id !== id));
-
-    const templates = useMemo(() => {
-        const find = k => columns.find(c => c.toLowerCase().includes(k));
-        return [
-            { label: 'Trạng thái', x: find('trạng thái') || find('status') },
-            { label: 'Giới tính', x: find('giới tính') || find('phái'), type: 'pie' },
-            { label: 'Ngành học', x: find('ngành') || find('chương trình') },
-            { label: 'Lớp', x: find('lớp') },
-            { label: 'Khu vực', x: find('khu vực') },
-        ].filter(t => t.x);
-    }, [columns]);
-
-    return (
-        <div className="h-full flex flex-col bg-slate-50">
-            <div className="p-4 bg-white border-b border-slate-200">
-                <div className="flex flex-wrap gap-2 items-center">
-                    <span className="text-xs font-bold text-slate-400 uppercase mr-2">Mẫu nhanh:</span>
-                    {templates.map(t => (
-                        <button key={t.label} onClick={() => addChart({ x: t.x, y: ['count'], type: t.type || 'bar' })} className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium hover:bg-blue-100 border border-blue-200 transition-colors">+ {t.label}</button>
-                    ))}
-                    <div className="h-6 w-px bg-slate-200 mx-2"></div>
-                    <button onClick={() => addChart({ x: columns[0], y: 'count', type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
-                    {charts.length > 0 && <button onClick={() => setCharts([])} className="ml-auto text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 size={16}/></button>}
-                </div>
-            </div>
-            
-            <div className="flex-1 p-6 overflow-y-auto">
-                {charts.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300">
-                        <BarChart3 size={48} className="mb-2 opacity-50"/>
-                        <p>Chọn mẫu biểu đồ ở trên để bắt đầu phân tích</p>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
-                        {charts.map(chart => (
-                            <ChartCard 
-                                key={chart.id} 
-                                config={chart} 
-                                data={data} 
-                                onDelete={() => removeChart(chart.id)} 
-                                onUpdate={(newData) => onUpdate(chart.id, newData)}
-                            />
-                        ))}
-                    </div>
-                )}
-            </div>
-        </div>
     );
 };
 
