@@ -10,7 +10,7 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, ArrowUpDown, ArrowUp, ArrowDown,
-  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, AlertCircle, ClipboardCheck, CloudCog
+  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, AlertCircle, ClipboardCheck, CloudCog, MousePointer2
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -26,7 +26,6 @@ const formatValue = (value) => {
   return String(value);
 };
 
-// HÀM LOẠI BỎ DẤU TIẾNG VIỆT
 const removeVietnameseTones = (str) => {
     str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g,"a"); 
     str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g,"e"); 
@@ -45,24 +44,15 @@ const removeVietnameseTones = (str) => {
     return str;
 }
 
-// THUẬT TOÁN TÌM KIẾM THÔNG MINH (BẤT CHẤP DẤU, THỨ TỰ)
 const checkSmartMatch = (target, search) => {
     if (!target) return false;
     if (!search) return true;
-    
-    // Chuẩn hóa dữ liệu: Về chữ thường + Bỏ dấu
     const targetStr = removeVietnameseTones(String(target).toLowerCase());
     const searchStr = removeVietnameseTones(String(search).toLowerCase());
-
-    // Tách từ khóa tìm kiếm (Ví dụ: "A C" -> ["a", "c"])
     const keywords = searchStr.split(/[\s,]+/).filter(k => k.trim() !== '');
-    
-    // Logic: Dữ liệu phải chứa TẤT CẢ các từ khóa (bất kể thứ tự)
-    // Ví dụ: Tìm "c a" -> Data "a b c" -> Thỏa mãn vì có cả "c" và "a"
     return keywords.every(kw => targetStr.includes(kw));
 };
 
-// Component thông báo Copy thành công
 const ToastNotification = ({ message, isVisible, onClose }) => {
     return (
         <AnimatePresence>
@@ -122,7 +112,7 @@ const exportToExcelXML = (data, columns, filename) => {
   document.body.removeChild(link);
 };
 
-// --- COMPONENT: POPUP CHỌN CỘT ---
+// --- MODALS ---
 const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Chọn cột dữ liệu" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const inputRef = useRef(null);
@@ -150,7 +140,6 @@ const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Ch�
     );
 };
 
-// --- COMPONENT: POPUP ĐA CHỌN GIÁ TRỊ ---
 const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave, title = "Chọn giá trị" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const [selected, setSelected] = useState(new Set());
@@ -229,7 +218,6 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
     );
 };
 
-// --- COMPONENT: ADVANCED SORT MODAL ---
 const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => {
     const [localRules, setLocalRules] = useState(sortRules || []);
 
@@ -584,6 +572,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [sortRules, setSortRules] = useState([]); 
   const [isSortModalOpen, setIsSortModalOpen] = useState(false);
 
+  // STATE MOBILE SELECT
+  const [isMobileSelectMode, setIsMobileSelectMode] = useState(false);
+
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
 
@@ -790,7 +781,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       
       return searchVals.some(searchVal => {
           switch (filter.condition) {
-              case 'contains': return checkSmartMatch(cellVal, searchVal); // DÙNG HÀM THÔNG MINH MỚI
+              case 'contains': return checkSmartMatch(cellVal, searchVal); 
               case 'not_contains': return !checkSmartMatch(cellVal, searchVal);
               case 'equals': return cellVal === searchVal;
               case 'not_equals': return cellVal !== searchVal;
@@ -810,7 +801,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,;]+/); 
-      // Lọc bỏ rỗng và trùng lặp trong input
       const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim()).filter(s => s !== ''))];
       
       if (uniquePasteOrder.length > 0) {
@@ -820,15 +810,12 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               const cellValLower = cellVal.toLowerCase();
 
               if (bulkFilterMode === 'exact') {
-                  // Chính xác: so sánh lower case
                   if (uniquePasteOrder.some(val => val.toLowerCase() === cellValLower)) {
-                      // Tìm key gốc trong pasteOrder để group
                       const key = uniquePasteOrder.find(val => val.toLowerCase() === cellValLower).toLowerCase();
                       if (!rowMap.has(key)) rowMap.set(key, []); 
                       rowMap.get(key).push(row); 
                   }
               } else {
-                  // Gần đúng (Partial): Dùng checkSmartMatch
                   const matchedKey = uniquePasteOrder.find(searchKey => checkSmartMatch(cellVal, searchKey));
                   if (matchedKey) { 
                       const key = matchedKey.toLowerCase();
@@ -838,7 +825,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               }
           });
           
-          // Gom nhóm lại theo thứ tự paste
           uniquePasteOrder.forEach(val => { 
               const key = val.toLowerCase();
               if (rowMap.has(key)) orderedData.push(...rowMap.get(key)); 
@@ -870,9 +856,33 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   const handleUndo = () => { if (history.past.length === 0) return; const prev = history.past[history.past.length - 1]; setHistory({ past: history.past.slice(0, -1), future: [{ config: { ...queryConfig }, result: { ...resultState } }, ...history.future] }); setQueryConfig(prev.config); setResultState(prev.result); };
   const handleRedo = () => { if (history.future.length === 0) return; const next = history.future[0]; setHistory({ past: [...history.past, { config: { ...queryConfig }, result: { ...resultState } }], future: history.future.slice(1) }); setQueryConfig(next.config); setResultState(next.result); };
-  const handleMouseDown = (r, c) => setSelection({ start: { row: r, col: c }, end: { row: r, col: c }, isDragging: true });
-  const handleMouseEnter = (r, c) => { if (selection.isDragging) setSelection(prev => ({ ...prev, end: { row: r, col: c } })); };
-  useEffect(() => { const up = () => { if (selection.isDragging) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging]);
+  
+  // LOGIC CLICK TRÊN MOBILE
+  const handleCellClick = (r, c) => {
+      if (!isMobileSelectMode) return;
+      
+      // Nếu chưa có điểm bắt đầu hoặc đã chọn xong 1 vùng -> Bắt đầu chọn lại
+      if (selection.start.row === null || !selection.isDragging) {
+           setSelection({
+               start: { row: r, col: c },
+               end: { row: r, col: c },
+               isDragging: true // Đang trong trạng thái chờ điểm cuối
+           });
+           triggerToast("Hãy chạm vào ô cuối cùng để chọn vùng");
+      } else {
+           // Đã có điểm đầu, giờ set điểm cuối và kết thúc
+           setSelection(prev => ({
+               ...prev,
+               end: { row: r, col: c },
+               isDragging: false
+           }));
+      }
+  };
+
+  const handleMouseDown = (r, c) => { if (!isMobileSelectMode) setSelection({ start: { row: r, col: c }, end: { row: r, col: c }, isDragging: true }); };
+  const handleMouseEnter = (r, c) => { if (selection.isDragging && !isMobileSelectMode) setSelection(prev => ({ ...prev, end: { row: r, col: c } })); };
+  useEffect(() => { const up = () => { if (selection.isDragging && !isMobileSelectMode) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging, isMobileSelectMode]);
+  
   const getSelectionRange = useCallback(() => { const { start, end } = selection; if (start.row === null) return null; return { minR: Math.min(start.row, end.row), maxR: Math.max(start.row, end.row), minC: Math.min(start.col, end.col), maxC: Math.max(start.col, end.col) }; }, [selection]);
   const handleCopyAll = () => { if (!resultState.data.length) return; const headers = resultState.visibleCols.join('\t'); const body = resultState.data.map(row => resultState.visibleCols.map(col => formatValue(row[col])).join('\t')).join('\n'); secureCopy(`${headers}\n${body}`).then(() => triggerToast(`Đã copy toàn bộ ${resultState.data.length} dòng!`)); };
   
@@ -1034,12 +1044,29 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         <div className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
             <div className="flex flex-wrap gap-2 justify-between items-center px-4 pt-2 border-b border-slate-200 bg-slate-50">
                  <div className="flex gap-2"><button onClick={() => setView('table')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'table' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><TableIcon size={16} /> Kết Quả</button><button onClick={() => setView('analytics')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'analytics' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><ChartIcon size={16} /> Phân tích</button></div>
+                 
+                 {/* FIX MOBILE: Ẩn bớt nút trên mobile để đỡ rối, hoặc gom nhóm */}
                  {resultState.isExecuted && view === 'table' && (
-                     <div className="flex items-center gap-2 pb-1 overflow-x-auto">
-                        <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap">{resultState.data.length} dòng</span>
+                     <div className="flex items-center gap-2 pb-1 overflow-x-auto no-scrollbar">
+                        {/* TOGGLE MOBILE SELECT */}
+                        <button 
+                            onClick={() => setIsMobileSelectMode(!isMobileSelectMode)} 
+                            className={`flex items-center gap-1 text-xs md:text-sm font-medium whitespace-nowrap px-2 py-1 rounded transition-colors ${isMobileSelectMode ? 'bg-green-100 text-green-700 border border-green-300' : 'text-slate-600 hover:text-blue-900 bg-slate-100'}`}
+                        >
+                            <MousePointer2 size={16} /> {isMobileSelectMode ? 'Bật chọn' : 'Tắt chọn'}
+                        </button>
+
                         <div className="h-4 w-px bg-slate-300"></div>
-                        <button onClick={() => setIsSortModalOpen(true)} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><ListFilter size={16} /> Advanced Sort</button>
-                        <button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> Copy Toàn bộ</button>
+                        
+                        {selection.start.row !== null && (
+                            <button onClick={handleCopy} className="flex items-center gap-1 text-xs md:text-sm text-blue-700 bg-blue-50 px-2 py-1 rounded hover:bg-blue-100 font-bold whitespace-nowrap animate-pulse">
+                                <Copy size={16} /> Copy vùng
+                            </button>
+                        )}
+
+                        <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap hidden md:inline">{resultState.data.length} dòng</span>
+                        <button onClick={() => setIsSortModalOpen(true)} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><ListFilter size={16} /> Sort</button>
+                        <button onClick={handleCopyAll} className="hidden md:flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> All</button>
                         <button onClick={() => exportToExcelXML(resultState.data, resultState.visibleCols, 'KetQua.xls')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
                      </div>
                  )}
@@ -1048,7 +1075,11 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                 {!resultState.isExecuted ? (<div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 p-4 text-center"><Search size={64} className="mb-4 opacity-20" /><p className="text-lg font-medium">Vui lòng thiết lập điều kiện và chạy truy vấn</p></div>) : (
                     view === 'table' ? (
                         <>
-                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} onClick={() => handleQuickSort(col)} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors cursor-pointer" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden"><span className="truncate" title={col}>{col}</span>{sortRules.length > 0 && sortRules[0].column === col ? (sortRules[0].direction === 'asc' ? <ArrowUp size={12} className="text-blue-600"/> : <ArrowDown size={12} className="text-blue-600"/>) : <ArrowUpDown size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />}</div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} onClick={(e) => e.stopPropagation()}/></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
+                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} onClick={() => handleQuickSort(col)} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors cursor-pointer" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden"><span className="truncate" title={col}>{col}</span>{sortRules.length > 0 && sortRules[0].column === col ? (sortRules[0].direction === 'asc' ? <ArrowUp size={12} className="text-blue-600"/> : <ArrowDown size={12} className="text-blue-600"/>) : <ArrowUpDown size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />}</div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} onClick={(e) => e.stopPropagation()}/></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} 
+                                onClick={() => handleCellClick(rIdx, cIdx)}
+                                onMouseDown={() => handleMouseDown(rIdx, cIdx)} 
+                                onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} 
+                                className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
                             <div className="bg-white border-t border-slate-200 p-2 flex justify-between items-center"><div className="flex items-center gap-2"><span className="text-xs text-slate-500">Hiển thị:</span><select className="text-xs border border-slate-300 rounded p-1" value={itemsPerPage} onChange={(e) => handleItemsPerPageChange(e.target.value)}><option value="50">50 dòng</option><option value="100">100 dòng</option><option value="500">500 dòng</option><option value="1000">1000 dòng</option><option value="all">Tất cả</option></select><span className="text-xs text-slate-500 ml-2">{itemsPerPage !== 'all' ? `${(currentPage - 1) * itemsPerPage + 1} - ${Math.min(currentPage * itemsPerPage, sortedData.length)} / ${sortedData.length}` : `Toàn bộ ${sortedData.length} dòng`}</span></div>{itemsPerPage !== 'all' && (<div className="flex gap-2"><button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowLeft size={16}/></button><button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowRight size={16}/></button></div>)}</div>
                         </>
                     ) : ( <SuperAnalytics data={resultState.data} charts={charts} setCharts={setCharts} onUpdate={updateChart} /> )
