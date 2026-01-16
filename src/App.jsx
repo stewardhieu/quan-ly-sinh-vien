@@ -10,7 +10,7 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, ArrowUpDown, ArrowUp, ArrowDown,
-  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square
+  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -65,9 +65,24 @@ const exportToExcelXML = (data, columns, filename) => {
 const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Chọn cột dữ liệu" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const inputRef = useRef(null);
-    useEffect(() => { if (isOpen && inputRef.current) setTimeout(() => inputRef.current.focus(), 100); setSearchTerm(""); }, [isOpen]);
+    
+    // Keyboard Event Listener
+    useEffect(() => { 
+        if (isOpen) {
+            if (inputRef.current) setTimeout(() => inputRef.current.focus(), 100); 
+            setSearchTerm("");
+            
+            const handleKeyDown = (e) => {
+                if (e.key === 'Escape') onClose();
+            };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
+        }
+    }, [isOpen, onClose]);
+
     if (!isOpen) return null;
     const filteredCols = columns.filter(c => c.toLowerCase().includes(searchTerm.toLowerCase()));
+    
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white w-full max-w-md rounded-xl shadow-2xl flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
@@ -79,38 +94,48 @@ const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Ch�
     );
 };
 
-// --- COMPONENT: POPUP ĐA CHỌN GIÁ TRỊ (MỚI - SỬA LỖI UI) ---
+// --- COMPONENT: POPUP ĐA CHỌN GIÁ TRỊ ---
 const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave, title = "Chọn giá trị" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const [selected, setSelected] = useState(new Set());
     const inputRef = useRef(null);
 
+    // Xử lý chuỗi nhập vào (Comma or Semicolon)
     useEffect(() => {
         if (isOpen) {
-            // Parse initial value (comma separated)
-            const initSet = new Set(initialValue ? String(initialValue).split(', ').map(s => s.trim()) : []);
+            const initSet = new Set(initialValue ? String(initialValue).split(/[,;]+/).map(s => s.trim()).filter(s => s) : []);
             setSelected(initSet);
             setSearchTerm("");
             if (inputRef.current) setTimeout(() => inputRef.current.focus(), 100);
         }
     }, [isOpen, initialValue]);
 
-    if (!isOpen) return null;
+    // Keyboard Listener
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') onClose();
+            if (e.key === 'Enter') handleConfirm();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, selected]); // dependency on selected to ensure latest state
 
-    const filteredOptions = options.filter(opt => String(opt).toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 100); // Limit render for perf
+    const filteredOptions = options.filter(opt => String(opt).toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 100);
 
     const toggleSelection = (val) => {
         const newSet = new Set(selected);
-        if (newSet.has(val)) newSet.delete(val);
-        else newSet.add(val);
+        if (newSet.has(val)) newSet.delete(val); else newSet.add(val);
         setSelected(newSet);
     };
 
     const handleConfirm = () => {
-        const valueString = Array.from(selected).join(', ');
+        const valueString = Array.from(selected).join(', '); // Chuẩn hóa về dấu phẩy khi lưu
         onSave(valueString);
         onClose();
     };
+
+    if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
@@ -118,8 +143,8 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
                 <div className="p-4 border-b border-slate-100 flex justify-between items-center">
                     <h3 className="font-bold text-blue-900">{title}</h3>
                     <div className="flex gap-2">
-                        <button onClick={handleConfirm} className="px-3 py-1 bg-blue-900 text-white text-xs rounded hover:bg-blue-800">Xác nhận</button>
-                        <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full"><X size={20}/></button>
+                        <button onClick={handleConfirm} className="px-3 py-1 bg-blue-900 text-white text-xs rounded hover:bg-blue-800">Xác nhận (Enter)</button>
+                        <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full" title="Esc"><X size={20}/></button>
                     </div>
                 </div>
                 
@@ -247,9 +272,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
-  // --- NEW STATES FOR FEATURES ---
+  // --- NEW STATES ---
   const [bulkFilterMode, setBulkFilterMode] = useState('exact'); 
-  const [activeSuggestionFilter, setActiveSuggestionFilter] = useState(null); // ID of filter opening the modal
+  const [activeSuggestionFilter, setActiveSuggestionFilter] = useState(null);
 
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
   const [currentPage, setCurrentPage] = useState(1);
@@ -308,11 +333,10 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   useEffect(() => { fetchGoogleSheetData(); }, [fetchGoogleSheetData]);
 
+  // Shortcut Listener
   useEffect(() => {
       const handleShortcut = (e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-              runQuery();
-          }
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runQuery();
       };
       window.addEventListener('keydown', handleShortcut);
       return () => window.removeEventListener('keydown', handleShortcut);
@@ -338,25 +362,17 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const removeFilterCondition = (id) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.filter(f => f.id !== id) }));
   const updateFilter = (id, field, value) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.map(f => f.id === id ? { ...f, [field]: value } : f) }));
   
-  // Mở modal gợi ý cho 1 dòng filter cụ thể
-  const openSuggestionModal = (filterId) => {
-      setActiveSuggestionFilter(filterId);
-  };
-
+  const openSuggestionModal = (filterId) => { setActiveSuggestionFilter(filterId); };
   const handleSuggestionSave = (value) => {
-      if (activeSuggestionFilter) {
-          updateFilter(activeSuggestionFilter, 'value', value);
-          setActiveSuggestionFilter(null);
-      }
+      if (activeSuggestionFilter) { updateFilter(activeSuggestionFilter, 'value', value); setActiveSuggestionFilter(null); }
   };
 
   const checkCondition = (row, filter) => {
       if (!filter.column || !filter.value) return true; 
       const cellVal = String(row[filter.column] || '').toLowerCase();
-      // FIX logic Đa chọn (A, B, C)
-      const searchVals = String(filter.value).toLowerCase().split(',').map(s => s.trim()).filter(s => s);
+      // FIX: Tách chuỗi bằng cả dấu phẩy và chấm phẩy
+      const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
       
-      // Nếu có nhiều giá trị (dấu phẩy), mặc định là logic OR trong ô đó (Một trong các giá trị)
       return searchVals.some(searchVal => {
           switch (filter.condition) {
               case 'contains': return cellVal.includes(searchVal);
@@ -376,40 +392,27 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     let filtered = [...rawData];
     let orderedData = [];
 
-    // --- BULK FILTER LOGIC ---
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
-      const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,]+/); 
+      const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,;]+/); 
       const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim().toLowerCase()).filter(s => s !== ''))];
       
       if (uniquePasteOrder.length > 0) {
           const rowMap = new Map();
-          
           filtered.forEach(row => {
               const cellVal = String(row[targetCol]).trim().toLowerCase();
               if (bulkFilterMode === 'exact') {
-                  if (uniquePasteOrder.includes(cellVal)) {
-                      if (!rowMap.has(cellVal)) rowMap.set(cellVal, []);
-                      rowMap.get(cellVal).push(row);
-                  }
+                  if (uniquePasteOrder.includes(cellVal)) { if (!rowMap.has(cellVal)) rowMap.set(cellVal, []); rowMap.get(cellVal).push(row); }
               } else {
                   const matchedKey = uniquePasteOrder.find(k => cellVal.includes(k));
-                  if (matchedKey) {
-                      if (!rowMap.has(matchedKey)) rowMap.set(matchedKey, []);
-                      rowMap.get(matchedKey).push(row);
-                  }
+                  if (matchedKey) { if (!rowMap.has(matchedKey)) rowMap.set(matchedKey, []); rowMap.get(matchedKey).push(row); }
               }
           });
-
-          uniquePasteOrder.forEach(val => {
-              if (rowMap.has(val)) orderedData.push(...rowMap.get(val));
-          });
-          
+          uniquePasteOrder.forEach(val => { if (rowMap.has(val)) orderedData.push(...rowMap.get(val)); });
           filtered = orderedData;
       }
     }
 
-    // --- DETAILED FILTER ---
     filtered = filtered.filter(row => {
         let result = true; 
         queryConfig.filters.forEach((filter, index) => {
@@ -422,8 +425,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     });
 
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
-    setCurrentPage(1); 
-    setSortConfig({ key: null, direction: null }); 
+    setCurrentPage(1); setSortConfig({ key: null, direction: null }); 
     setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
 
@@ -450,7 +452,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(sortedData.length / itemsPerPage);
   const handleItemsPerPageChange = (val) => { setItemsPerPage(val === 'all' ? 'all' : Number(val)); setCurrentPage(1); };
 
-  // Xác định dòng filter đang được edit để lấy options
   const activeFilterObj = queryConfig.filters.find(f => f.id === activeSuggestionFilter);
   const suggestionOptions = activeFilterObj ? getColumnOptions(activeFilterObj.column) : [];
   const suggestionInitialValue = activeFilterObj ? activeFilterObj.value : "";
@@ -472,7 +473,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-5 flex flex-col gap-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2 cursor-pointer" onClick={() => setIsQueryBuilderOpen(!isQueryBuilderOpen)}>
-                 <h2 className="text-base md:text-lg font-bold text-blue-900 flex items-center gap-2"><Filter size={20} /> Query Builder {!isQueryBuilderOpen && <span className="text-xs font-normal text-slate-400 ml-2">(Mở rộng)</span>}</h2>
+                 <h2 className="text-base md:text-lg font-bold text-blue-900 flex items-center gap-2"><Filter size={20} /> Advanced Query Builder {!isQueryBuilderOpen && <span className="text-xs font-normal text-slate-400 ml-2">(Mở rộng)</span>}</h2>
                  <div className="flex items-center gap-2"><span className="text-xs text-slate-500 hidden md:inline">{loading ? 'Đang tải...' : `Source: ${rawData.length} dòng`}</span>{isQueryBuilderOpen ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}</div>
             </div>
 
@@ -554,68 +555,57 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       </main>
       
       <ColumnSelectorModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} columns={allColumns} onSelect={handleColumnSelect} />
-      
-      {/* MODAL GỢI Ý DỮ LIỆU */}
-      <MultiValueSelectModal 
-          isOpen={!!activeSuggestionFilter} 
-          onClose={() => setActiveSuggestionFilter(null)} 
-          options={suggestionOptions} 
-          initialValue={suggestionInitialValue} 
-          onSave={handleSuggestionSave}
-          title="Chọn giá trị từ cột"
-      />
+      <MultiValueSelectModal isOpen={!!activeSuggestionFilter} onClose={() => setActiveSuggestionFilter(null)} options={suggestionOptions} initialValue={suggestionInitialValue} onSave={handleSuggestionSave} title="Chọn giá trị từ cột" />
     </div>
   );
 };
 
-// --- CHART COMPONENTS (Giữ nguyên) ---
+// --- CHART COMPONENTS (Nâng cấp Stack/Segment) ---
 const ChartCard = ({ config, data, onDelete }) => {
     const [type, setType] = useState(config.type || 'bar');
     const [xAxis, setXAxis] = useState(config.x);
-    const [yAxisKeys, setYAxisKeys] = useState(config.y || ['count']); 
+    const [segmentBy, setSegmentBy] = useState(''); // Tính năng mới: Chia nhóm theo (Segment By)
     
     const columns = Object.keys(data[0] || {});
 
-    const toggleYKey = (key) => {
-        if (yAxisKeys.includes(key)) { setYAxisKeys(p => p.length > 1 ? p.filter(k => k !== key) : p); } 
-        else { setYAxisKeys(p => [...p, key]); }
-    };
-
-    const processedData = useMemo(() => {
+    // Logic xử lý dữ liệu phức tạp (Segment / Stack)
+    const processed = useMemo(() => {
+        // 1. Lấy danh sách các segment duy nhất (nếu có chọn segmentBy)
+        const segments = segmentBy ? [...new Set(data.map(r => r[segmentBy] || 'N/A'))].sort() : ['count'];
+        
+        // 2. Gom nhóm theo trục X
         const grouped = data.reduce((acc, row) => {
-            const key = row[xAxis] || 'N/A';
-            if (!acc[key]) {
-                acc[key] = { name: key, count: 0 };
-                columns.forEach(c => acc[key][c] = 0);
+            const xVal = row[xAxis] || 'N/A';
+            if (!acc[xVal]) {
+                acc[xVal] = { name: xVal };
+                segments.forEach(seg => acc[xVal][seg] = 0);
             }
-            acc[key].count += 1;
-            yAxisKeys.forEach(yKey => {
-                if (yKey !== 'count') {
-                    const val = parseFloat(row[yKey]);
-                    if (!isNaN(val)) acc[key][yKey] += val;
-                }
-            });
+            
+            // Nếu có segmentBy, tăng biến đếm của segment đó. Nếu không, tăng count chung.
+            const segKey = segmentBy ? (row[segmentBy] || 'N/A') : 'count';
+            acc[xVal][segKey] += 1;
+            
             return acc;
         }, {});
 
-        return Object.values(grouped).map(item => {
-            const row = { name: item.name };
-            yAxisKeys.forEach(yKey => { row[yKey] = yKey === 'count' ? item.count : item[yKey]; });
-            row._sortVal = row[yAxisKeys[0]]; 
-            return row;
-        }).sort((a,b) => b._sortVal - a._sortVal).slice(0, 20); 
-    }, [data, xAxis, yAxisKeys, columns]);
+        // 3. Chuyển về mảng
+        return {
+            data: Object.values(grouped).sort((a,b) => b.count - a.count).slice(0, 20),
+            keys: segments
+        };
+    }, [data, xAxis, segmentBy]);
 
-    const COLORS = ['#003366', '#FF8042', '#00C49F', '#FFBB28', '#FF4444'];
+    const COLORS = ['#003366', '#FF8042', '#00C49F', '#FFBB28', '#FF4444', '#8884d8', '#82ca9d'];
     
     const renderContent = () => {
-        const Cmp = { bar: BarChart, line: LineChart, area: AreaChart, pie: PieChart, composed: ComposedChart }[type] || BarChart;
+        const Cmp = { bar: BarChart, line: LineChart, area: AreaChart, pie: PieChart }[type] || BarChart;
         
         if (type === 'pie') {
+             // Pie chart không support segment tốt, nên chỉ vẽ tổng
              return (
                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                        <Pie data={processedData} dataKey={yAxisKeys[0]} nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{processedData.map((e,i)=> <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie>
+                        <Pie data={processed.data} dataKey={processed.keys[0]} nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{processed.data.map((e,i)=> <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie>
                         <RechartsTooltip /><Legend />
                     </PieChart>
                 </ResponsiveContainer>
@@ -624,18 +614,21 @@ const ChartCard = ({ config, data, onDelete }) => {
 
         return (
             <ResponsiveContainer width="100%" height="100%">
-                <Cmp data={processedData}>
+                <Cmp data={processed.data}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" height={60} tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end"/>
                     <YAxis />
                     <RechartsTooltip />
                     <Legend />
-                    {yAxisKeys.map((yKey, idx) => {
+                    {/* Render dynamic bars based on segments */}
+                    {processed.keys.map((key, idx) => {
                         const color = COLORS[idx % COLORS.length];
-                        if (type === 'bar') return <Bar key={yKey} dataKey={yKey} fill={color} />;
-                        if (type === 'line') return <Line key={yKey} type="monotone" dataKey={yKey} stroke={color} strokeWidth={2} />;
-                        if (type === 'area') return <Area key={yKey} type="monotone" dataKey={yKey} fill={color} stroke={color} />;
-                        return <Bar key={yKey} dataKey={yKey} fill={color} />;
+                        const props = { key, dataKey: key, fill: color, stroke: color, stackId: segmentBy ? 'a' : undefined, name: key === 'count' ? 'Số lượng' : key };
+                        
+                        if (type === 'bar') return <Bar {...props} />;
+                        if (type === 'line') return <Line type="monotone" {...props} strokeWidth={2} />;
+                        if (type === 'area') return <Area type="monotone" {...props} />;
+                        return <Bar {...props} />;
                     })}
                 </Cmp>
             </ResponsiveContainer>
@@ -645,21 +638,20 @@ const ChartCard = ({ config, data, onDelete }) => {
     return (
         <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-96 flex flex-col">
             <div className="flex flex-wrap justify-between items-center mb-4 border-b border-slate-100 pb-2 gap-2">
-                <div className="flex gap-2 items-center flex-1">
+                <div className="flex gap-2 items-center flex-1 overflow-x-auto">
                     <select className="text-xs border rounded p-1 font-bold text-blue-900" value={type} onChange={e=>setType(e.target.value)}><option value="bar">Cột</option><option value="line">Đường</option><option value="pie">Tròn</option><option value="area">Vùng</option></select>
-                    <span className="text-xs text-slate-400">X:</span>
+                    <span className="text-xs text-slate-400 whitespace-nowrap">Trục X:</span>
                     <select className="text-xs border rounded p-1 max-w-[100px]" value={xAxis} onChange={e=>setXAxis(e.target.value)}>{columns.map(c=><option key={c} value={c}>{c}</option>)}</select>
-                    <span className="text-xs text-slate-400">Y:</span>
-                    <div className="flex flex-wrap gap-1">
-                        {yAxisKeys.map(k => (<span key={k} onClick={() => toggleYKey(k)} className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded cursor-pointer hover:bg-red-100 hover:text-red-800">{k}</span>))}
-                        <div className="relative group">
-                            <button className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded border hover:bg-slate-200">+</button>
-                            <div className="absolute top-full left-0 z-50 bg-white border shadow-lg p-2 rounded w-48 hidden group-hover:block max-h-40 overflow-y-auto">
-                                <div onClick={() => toggleYKey('count')} className="p-1 hover:bg-blue-50 text-xs cursor-pointer">Đếm (Count)</div>
-                                {columns.map(c => (<div key={c} onClick={() => toggleYKey(c)} className={`p-1 hover:bg-blue-50 text-xs cursor-pointer ${yAxisKeys.includes(c) ? 'text-blue-600 font-bold' : ''}`}>{c}</div>))}
-                            </div>
-                        </div>
-                    </div>
+                    
+                    {type !== 'pie' && (
+                        <>
+                            <span className="text-xs text-slate-400 whitespace-nowrap flex items-center gap-1"><Split size={12}/> Chia theo:</span>
+                            <select className="text-xs border rounded p-1 max-w-[100px]" value={segmentBy} onChange={e=>setSegmentBy(e.target.value)}>
+                                <option value="">(Không)</option>
+                                {columns.map(c=><option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </>
+                    )}
                 </div>
                 <button onClick={onDelete} className="text-slate-300 hover:text-red-500"><X size={16}/></button>
             </div>
@@ -668,6 +660,7 @@ const ChartCard = ({ config, data, onDelete }) => {
     );
 };
 
+// --- SUPER ANALYTICS DASHBOARD ---
 const SuperAnalytics = ({ data }) => {
     if (!data || data.length === 0) return <div className="p-10 text-center text-slate-400">Chưa có dữ liệu. Vui lòng chạy truy vấn.</div>;
     const [charts, setCharts] = useState([]);
