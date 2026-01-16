@@ -26,7 +26,6 @@ const formatValue = (value) => {
   return String(value);
 };
 
-// Component thông báo Copy thành công
 const ToastNotification = ({ message, isVisible, onClose }) => {
     return (
         <AnimatePresence>
@@ -35,7 +34,7 @@ const ToastNotification = ({ message, isVisible, onClose }) => {
                     initial={{ opacity: 0, y: 50, scale: 0.9 }} 
                     animate={{ opacity: 1, y: 0, scale: 1 }} 
                     exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                    className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 z-50"
+                    className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 z-50 whitespace-nowrap"
                 >
                     <ClipboardCheck className="text-green-400" size={20} />
                     <span className="text-sm font-medium">{message}</span>
@@ -419,14 +418,12 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
         date: new Date().toLocaleDateString('vi-VN')
     };
 
-    // Tạo lịch sử mới (đưa item mới lên đầu)
     const newHistory = [newItem, ...history.filter(h => h.key !== uniqueKey)].slice(0, 20);
     setHistory(newHistory);
     localStorage.setItem('sheet_history_v2', JSON.stringify(newHistory));
     updateCloudHistory(newHistory);
     
     setChecking(false);
-    // QUAN TRỌNG: Truyền tên mới sang Dashboard để nó ghi đè lên Sheet
     onConfig(cleanId, cleanRange, newItem.name);
   };
 
@@ -670,10 +667,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               const savedConfig = JSON.parse(rows[0][0]);
               if (savedConfig.charts) setCharts(savedConfig.charts);
               if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
-              
-              // ĐÃ XÓA LOGIC ĐỒNG BỘ NGƯỢC "NGUY HIỂM" TẠI ĐÂY
-              // Để tránh việc tên cũ trên sheet ghi đè tên mới vừa đặt ở SetupScreen
-              
               console.log("Đã tải cấu hình từ Sheet thành công.");
           }
       } catch (error) {
@@ -753,23 +746,38 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       if (activeSuggestionFilter) { updateFilter(activeSuggestionFilter, 'value', value); setActiveSuggestionFilter(null); }
   };
 
+  // --- CẬP NHẬT LOGIC TÌM KIẾM THÔNG MINH ---
   const checkCondition = (row, filter) => {
       if (!filter.column || !filter.value) return true; 
       const cellVal = String(row[filter.column] || '').toLowerCase();
-      const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
+      const rawSearchVal = String(filter.value).toLowerCase();
       
-      return searchVals.some(searchVal => {
-          switch (filter.condition) {
-              case 'contains': return cellVal.includes(searchVal);
-              case 'not_contains': return !cellVal.includes(searchVal);
-              case 'equals': return cellVal === searchVal;
-              case 'not_equals': return cellVal !== searchVal;
-              case 'starts': return cellVal.startsWith(searchVal);
-              case 'greater': return parseFloat(cellVal) >= parseFloat(searchVal);
-              case 'less': return parseFloat(cellVal) <= parseFloat(searchVal);
-              default: return true;
-          }
-      });
+      // Tách chuỗi tìm kiếm thành các từ khóa (tokens)
+      // Ví dụ: "Nguyen A" -> ["nguyen", "a"]
+      const searchTokens = rawSearchVal.split(/\s+/).filter(t => t.trim() !== '');
+
+      // Tách chuỗi trong ô dữ liệu để so sánh chính xác hơn (nếu cần equals)
+      // Nhưng với contains, ta duyệt từng token
+      
+      switch (filter.condition) {
+          case 'contains':
+              // Logic mới: Tất cả từ khóa phải xuất hiện trong ô dữ liệu (không cần đúng thứ tự)
+              return searchTokens.every(token => cellVal.includes(token));
+          case 'not_contains': 
+              return !cellVal.includes(rawSearchVal);
+          case 'equals': 
+              return cellVal === rawSearchVal;
+          case 'not_equals': 
+              return cellVal !== rawSearchVal;
+          case 'starts': 
+              return cellVal.startsWith(rawSearchVal);
+          case 'greater': 
+              return parseFloat(cellVal) >= parseFloat(rawSearchVal);
+          case 'less': 
+              return parseFloat(cellVal) <= parseFloat(rawSearchVal);
+          default: 
+              return true;
+      }
   };
 
   const runQuery = () => {
@@ -947,13 +955,13 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                             </div>
                         </div>
                         <div className="flex flex-col gap-2">
-                            <div className="flex justify-between items-center"><span className="text-xs font-semibold uppercase text-slate-500">Điều kiện chi tiết</span><button onClick={addFilterCondition} className="text-xs flex items-center gap-1 text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition-colors"><Plus size={14} /> Thêm điều kiện</button></div>
+                            <div className="flex justify-between items-center"><span className="text-xs font-semibold uppercase text-slate-500">Điều kiện chi tiết</span><button type="button" onClick={addFilterCondition} className="text-xs flex items-center gap-1 bg-blue-50 text-blue-800 px-3 py-2 rounded-lg font-bold border border-blue-100 hover:bg-blue-100 active:scale-95 transition-transform shadow-sm"><Plus size={16} /> Thêm điều kiện</button></div>
                             <div className="max-h-48 overflow-y-auto pr-1 space-y-2">
                                 {queryConfig.filters.map((filter, idx) => (
                                     <div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0">
                                         <div className="flex items-center gap-1">{idx > 0 ? (<select className="border border-slate-300 bg-slate-100 rounded px-1 py-2 text-xs font-bold w-16" value={filter.operator} onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}><option value="AND">VÀ</option><option value="OR">HOẶC</option></select>) : <span className="text-slate-400 font-mono text-xs w-16 text-center">Bắt đầu</span>}</div>
                                         <div onClick={() => openColumnModal('filter', filter.id)} className="flex-1 border border-slate-300 rounded px-3 py-2 cursor-pointer hover:border-blue-500 bg-white flex justify-between items-center"><span className={`truncate ${!filter.column ? 'text-slate-400' : 'text-slate-800'}`}>{filter.column || "(Chọn cột)"}</span><ChevronDown size={14} className="text-slate-400"/></div>
-                                        <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}><option value="contains">Chứa</option><option value="not_contains">Không chứa</option><option value="equals">Bằng tuyệt đối</option><option value="not_equals">Khác</option><option value="starts">Bắt đầu với</option><option value="greater">Lớn hơn</option><option value="less">Nhỏ hơn</option></select>
+                                        <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}><option value="contains">Chứa (Từ khóa)</option><option value="not_contains">Không chứa</option><option value="equals">Bằng tuyệt đối</option><option value="not_equals">Khác</option><option value="starts">Bắt đầu với</option><option value="greater">Lớn hơn</option><option value="less">Nhỏ hơn</option></select>
                                         <div className="flex-1 w-full relative flex gap-1">
                                             <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 pr-8" placeholder="Giá trị..." value={filter.value} onChange={(e) => updateFilter(filter.id, 'value', e.target.value)} />
                                             {filter.value && <button onClick={() => updateFilter(filter.id, 'value', '')} className="absolute right-12 top-2.5 text-slate-400 hover:text-red-500"><X size={14}/></button>}
