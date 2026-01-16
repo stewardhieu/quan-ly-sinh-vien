@@ -26,16 +26,39 @@ const formatValue = (value) => {
   return String(value);
 };
 
-// THUẬT TOÁN TÌM KIẾM THÔNG MINH (A C -> tìm thấy A B C)
+// HÀM LOẠI BỎ DẤU TIẾNG VIỆT
+const removeVietnameseTones = (str) => {
+    str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g,"a"); 
+    str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g,"e"); 
+    str = str.replace(/ì|í|ị|ỉ|ĩ/g,"i"); 
+    str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g,"o"); 
+    str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g,"u"); 
+    str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g,"y"); 
+    str = str.replace(/đ/g,"d");
+    str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
+    str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
+    str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
+    str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
+    str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
+    str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "Y");
+    str = str.replace(/Đ/g, "D");
+    return str;
+}
+
+// THUẬT TOÁN TÌM KIẾM THÔNG MINH (BẤT CHẤP DẤU, THỨ TỰ)
 const checkSmartMatch = (target, search) => {
     if (!target) return false;
     if (!search) return true;
     
-    const targetStr = String(target).toLowerCase();
-    // Tách từ khóa tìm kiếm bằng dấu cách hoặc dấu phẩy
-    const keywords = String(search).toLowerCase().split(/[\s,]+/).filter(k => k.trim() !== '');
+    // Chuẩn hóa dữ liệu: Về chữ thường + Bỏ dấu
+    const targetStr = removeVietnameseTones(String(target).toLowerCase());
+    const searchStr = removeVietnameseTones(String(search).toLowerCase());
+
+    // Tách từ khóa tìm kiếm (Ví dụ: "A C" -> ["a", "c"])
+    const keywords = searchStr.split(/[\s,]+/).filter(k => k.trim() !== '');
     
-    // Logic: Dữ liệu phải chứa TẤT CẢ các từ khóa
+    // Logic: Dữ liệu phải chứa TẤT CẢ các từ khóa (bất kể thứ tự)
+    // Ví dụ: Tìm "c a" -> Data "a b c" -> Thỏa mãn vì có cả "c" và "a"
     return keywords.every(kw => targetStr.includes(kw));
 };
 
@@ -681,10 +704,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               const savedConfig = JSON.parse(rows[0][0]);
               if (savedConfig.charts) setCharts(savedConfig.charts);
               if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
-              
-              // ĐÃ XÓA LOGIC ĐỒNG BỘ NGƯỢC "NGUY HIỂM" TẠI ĐÂY
-              // Để tránh việc tên cũ trên sheet ghi đè tên mới vừa đặt ở SetupScreen
-              
               console.log("Đã tải cấu hình từ Sheet thành công.");
           }
       } catch (error) {
@@ -769,10 +788,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       const cellVal = String(row[filter.column] || '').toLowerCase();
       const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
       
-      // LOGIC TÌM KIẾM CŨ (MATCH TỪNG GIÁ TRỊ)
-      // LOGIC MỚI: Chỉ áp dụng checkSmartMatch khi điều kiện là 'contains' và filter.value không phải danh sách nhiều giá trị ngăn cách phẩy (trừ khi cố ý)
-      // Ở đây tôi áp dụng checkSmartMatch cho logic 'contains'
-      
       return searchVals.some(searchVal => {
           switch (filter.condition) {
               case 'contains': return checkSmartMatch(cellVal, searchVal); // DÙNG HÀM THÔNG MINH MỚI
@@ -801,7 +816,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       if (uniquePasteOrder.length > 0) {
           const rowMap = new Map();
           filtered.forEach(row => {
-              const cellVal = String(row[targetCol]).trim(); // Không lowercase ở đây để giữ nguyên gốc nếu cần match chính xác
+              const cellVal = String(row[targetCol]).trim(); 
               const cellValLower = cellVal.toLowerCase();
 
               if (bulkFilterMode === 'exact') {
@@ -814,7 +829,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                   }
               } else {
                   // Gần đúng (Partial): Dùng checkSmartMatch
-                  // Duyệt qua danh sách paste, nếu row này match với bất kỳ dòng nào trong paste -> Lấy
                   const matchedKey = uniquePasteOrder.find(searchKey => checkSmartMatch(cellVal, searchKey));
                   if (matchedKey) { 
                       const key = matchedKey.toLowerCase();
