@@ -10,11 +10,12 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, ArrowUpDown, ArrowUp, ArrowDown,
-  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split, ListFilter, RotateCcw, Save
+  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split, ListFilter, RotateCcw, CloudUpload, Cloud
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
+const CONFIG_SHEET_NAME = '_PKA_CONFIG'; // Tên tab ẩn để lưu cấu hình
 
 // --- UTILS ---
 const formatValue = (value) => {
@@ -259,7 +260,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
       setLoading(false);
     },
     onError: (error) => { console.error("Login Failed:", error); alert("Đăng nhập thất bại."); },
-    // UPDATE: Thay đổi scope từ readonly sang toàn quyền (để Ghi config)
+    // THAY ĐỔI QUAN TRỌNG: Đổi scope sang 'spreadsheets' (không có .readonly) để cho phép ghi cấu hình
     scope: "https://www.googleapis.com/auth/spreadsheets",
   });
 
@@ -273,7 +274,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
         </div>
         <button onClick={() => login()} disabled={loading} className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-300 rounded-lg hover:bg-slate-50 transition-all group">
             {loading ? <RefreshCw className="animate-spin w-5 h-5 text-blue-900"/> : (<svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.11c-.22-.66-.35-1.36-.35-2.11s.13-1.45.35-2.11V7.05H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.95l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.05l3.66 2.84c.87-2.6 3.3-4.51 6.16-4.51z" fill="#EA4335"/></svg>)}
-            <span className="font-medium text-slate-700 group-hover:text-blue-900">{loading ? 'Đang kết nối...' : 'Đăng nhập bằng Google'}</span>
+            <span className="font-medium text-slate-700 group-hover:text-blue-900">{loading ? 'Đang kết nối...' : 'Đăng nhập bằng Google (Full Quyền)'}</span>
         </button>
       </div>
     </motion.div>
@@ -328,8 +329,8 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   
-  // State for Saving
-  const [isSaving, setIsSaving] = useState(false);
+  // STATE MỚI CHO TÍNH NĂNG LƯU CẤU HÌNH
+  const [isConfigSaving, setIsConfigSaving] = useState(false);
 
   // --- NEW STATES ---
   const [bulkFilterMode, setBulkFilterMode] = useState('exact'); 
@@ -346,24 +347,22 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
 
-  const [charts, setCharts] = useState([]); // Removed initial localStorage load for charts
-  const [queryConfig, setQueryConfig] = useState({ // Removed initial localStorage load for queryConfig
+  // NÂNG CẤP: Chuyển state Charts lên Dashboard để không bị reset khi đổi tab
+  const [charts, setCharts] = useState(() => {
+      const saved = localStorage.getItem('pka_dashboard_charts');
+      return saved ? JSON.parse(saved) : [];
+  });
+  useEffect(() => localStorage.setItem('pka_dashboard_charts', JSON.stringify(charts)), [charts]);
+
+  const [queryConfig, setQueryConfig] = useState(() => {
+      const saved = localStorage.getItem('pka_query_config');
+      return saved ? JSON.parse(saved) : {
         selectedCols: [],
         bulkFilter: { column: '', values: '' },
         filters: [{ id: 1, column: '', condition: 'contains', value: '', operator: 'AND' }]
+      };
   });
 
-  // Effect to load local storage if remote fails or init
-  useEffect(() => {
-    const savedCharts = localStorage.getItem('pka_dashboard_charts');
-    if (savedCharts && charts.length === 0) setCharts(JSON.parse(savedCharts));
-
-    const savedQuery = localStorage.getItem('pka_query_config');
-    if (savedQuery && queryConfig.selectedCols.length === 0) setQueryConfig(JSON.parse(savedQuery));
-  }, []);
-
-  // Save to local storage as backup
-  useEffect(() => localStorage.setItem('pka_dashboard_charts', JSON.stringify(charts)), [charts]);
   useEffect(() => { localStorage.setItem('pka_query_config', JSON.stringify(queryConfig)); }, [queryConfig]);
 
   const [resultState, setResultState] = useState({ data: [], visibleCols: [], isExecuted: false });
@@ -374,15 +373,19 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const tableRef = useRef(null);
   const resizingRef = useRef(null);
 
+  // NÂNG CẤP: Logic Reset bộ lọc thông minh (Tìm cột Mã, Họ tên...)
   const resetFilters = () => {
       const findCol = (keywords) => allColumns.find(c => keywords.some(k => c.toLowerCase().includes(k)));
+      
       const defaultCols = [
           findCol(['mã', 'mssv', 'code']), 
           findCol(['họ tên', 'tên', 'name']), 
           findCol(['khoá', 'khóa', 'course']), 
           findCol(['khoa', 'department'])
       ].filter(Boolean);
+
       const defaultFilterCol = findCol(['mã', 'mssv', 'code']) || '';
+
       setQueryConfig({
           selectedCols: defaultCols.length > 0 ? defaultCols : allColumns.slice(0, 5),
           bulkFilter: { column: defaultFilterCol, values: '' },
@@ -390,77 +393,76 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       });
   };
 
+  // NÂNG CẤP: Logic Update biểu đồ từ con (ChartCard)
   const updateChart = (id, newConfig) => {
       setCharts(prev => prev.map(c => c.id === id ? { ...c, ...newConfig } : c));
   };
 
-  // --- NEW FEATURE: REMOTE CONFIG LOADING/SAVING ---
-  const CONFIG_SHEET_NAME = '_PKA_CONFIG';
-
-  const fetchRemoteConfig = async () => {
+  // --- LOGIC LƯU TRỮ CẤU HÌNH TRÊN SHEET ---
+  const saveConfigToSheet = async () => {
+      setIsConfigSaving(true);
       try {
-          const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${CONFIG_SHEET_NAME}!A1?key=${API_KEY}`;
+          const configData = {
+              charts: charts,
+              queryConfig: queryConfig,
+              updatedAt: new Date().toISOString()
+          };
+          const configString = JSON.stringify(configData);
+
+          // 1. Kiểm tra xem tab cấu hình tồn tại chưa
+          const metadataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}?key=${API_KEY}`;
+          const metadataRes = await axios.get(metadataUrl, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+          const sheets = metadataRes.data.sheets || [];
+          const configSheetExists = sheets.some(s => s.properties.title === CONFIG_SHEET_NAME);
+
+          // 2. Nếu chưa, tạo tab mới và ẩn nó đi
+          if (!configSheetExists) {
+              const addSheetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}:batchUpdate`;
+              await axios.post(addSheetUrl, {
+                  requests: [{
+                      addSheet: {
+                          properties: { title: CONFIG_SHEET_NAME, hidden: true }
+                      }
+                  }]
+              }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+          }
+
+          // 3. Ghi dữ liệu vào ô A1
+          const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${CONFIG_SHEET_NAME}!A1:A1?valueInputOption=RAW`;
+          await axios.put(updateUrl, {
+              values: [[configString]]
+          }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+
+          alert("Đã lưu cấu hình lên Google Sheet thành công!");
+      } catch (error) {
+          console.error("Lỗi lưu cấu hình:", error);
+          alert("Lỗi khi lưu cấu hình. Hãy chắc chắn bạn đã cấp quyền 'Chỉnh sửa' (Edit) cho ứng dụng khi đăng nhập.");
+      }
+      setIsConfigSaving(false);
+  };
+
+  const loadConfigFromSheet = async () => {
+      try {
+          const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${CONFIG_SHEET_NAME}!A1:A1?key=${API_KEY}`;
           const response = await axios.get(url, { headers: { Authorization: `Bearer ${user.accessToken}` } });
-          const values = response.data.values;
-          if (values && values.length > 0 && values[0][0]) {
-              const remoteConfig = JSON.parse(values[0][0]);
-              if (remoteConfig.charts) setCharts(remoteConfig.charts);
-              if (remoteConfig.queryConfig) setQueryConfig(remoteConfig.queryConfig);
+          const rows = response.data.values;
+          
+          if (rows && rows.length > 0 && rows[0][0]) {
+              const savedConfig = JSON.parse(rows[0][0]);
+              if (savedConfig.charts) setCharts(savedConfig.charts);
+              if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
               console.log("Đã tải cấu hình từ Sheet thành công.");
           }
       } catch (error) {
-          // 400 or 404 means sheet doesn't exist or empty, strictly ignore to use local/default
-          if (error.response && (error.response.status === 400 || error.response.status === 404)) {
-             console.log("Không tìm thấy cấu hình trên Sheet (Sẽ dùng mặc định).");
-          } else {
-             console.error("Lỗi đọc config:", error);
-          }
+          // 404 hoặc lỗi khác nghĩa là chưa có cấu hình, không sao cả
+          console.log("Chưa có cấu hình trên Sheet hoặc không thể đọc.");
       }
   };
-
-  const saveRemoteConfig = async () => {
-      setIsSaving(true);
-      try {
-          // 1. Prepare data
-          const configData = { charts, queryConfig };
-          const jsonString = JSON.stringify(configData);
-
-          // 2. Try to update value directly
-          const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${CONFIG_SHEET_NAME}!A1?valueInputOption=RAW&key=${API_KEY}`;
-          try {
-              await axios.put(updateUrl, { values: [[jsonString]] }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
-              alert("Đã lưu cấu hình vào Sheet thành công!");
-          } catch (updateError) {
-              // 3. If update fails, maybe sheet doesn't exist? Create it.
-              if (updateError.response && (updateError.response.status === 400 || updateError.response.status === 404)) {
-                  const batchUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}:batchUpdate`;
-                  // Create hidden sheet
-                  await axios.post(batchUrl, {
-                      requests: [{ addSheet: { properties: { title: CONFIG_SHEET_NAME, hidden: true } } }]
-                  }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
-                  
-                  // Retry update
-                  await axios.put(updateUrl, { values: [[jsonString]] }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
-                  alert("Đã khởi tạo và lưu cấu hình vào Sheet!");
-              } else {
-                  throw updateError;
-              }
-          }
-      } catch (error) {
-          console.error("Lỗi lưu config:", error);
-          if (error.response && error.response.status === 403) {
-              alert("Lỗi: Bạn cần quyền CHỈNH SỬA (Edit) file Sheet này để lưu cấu hình.");
-          } else {
-              alert("Không thể lưu cấu hình. Kiểm tra kết nối mạng.");
-          }
-      }
-      setIsSaving(false);
-  };
-  // -------------------------------------------------
 
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true); setLoadError(null);
     try {
+        // Tải dữ liệu chính
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${API_KEY}`;
         const response = await axios.get(url, { headers: { Authorization: `Bearer ${user.accessToken}` } });
         const result = response.data;
@@ -476,10 +478,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         });
         setRawData(formattedData); setAllColumns(headers); 
         
-        // Try loading remote config AFTER data is loaded
-        fetchRemoteConfig();
+        // Tự động tải cấu hình sau khi load data xong
+        await loadConfigFromSheet();
 
-        // Fallback init columns if no config
         setQueryConfig(prev => { 
             if (prev.selectedCols.length === 0) {
                 const findCol = (keywords) => headers.find(c => keywords.some(k => c.toLowerCase().includes(k)));
@@ -650,10 +651,15 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
         <div className="flex items-center gap-3"><div className="bg-blue-900 text-white p-2 rounded hidden md:block"><LayoutTemplate size={20} /></div><div><h1 className="font-bold text-blue-900 leading-tight text-sm md:text-base">PKA MANAGEMENT</h1><p className="text-xs text-slate-500 hidden md:block">Hệ thống Tra cứu & Phân tích dữ liệu</p></div></div>
         <div className="flex items-center gap-2 md:gap-4">
-            <button onClick={saveRemoteConfig} disabled={isSaving} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded border border-transparent transition-colors shadow-sm">
-                 {isSaving ? <RefreshCw className="animate-spin" size={14}/> : <Save size={14} />} 
-                 <span className="hidden md:inline">Lưu View</span>
+            <button onClick={saveConfigToSheet} disabled={isConfigSaving} className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition-colors">
+                {isConfigSaving ? <RefreshCw size={14} className="animate-spin"/> : <CloudUpload size={14}/>} 
+                {isConfigSaving ? 'Đang lưu...' : 'Lưu cấu hình'}
             </button>
+            {/* Nút lưu cấu hình Mobile */}
+            <button onClick={saveConfigToSheet} disabled={isConfigSaving} className="md:hidden p-2 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition-colors">
+                 {isConfigSaving ? <RefreshCw size={18} className="animate-spin"/> : <CloudUpload size={18}/>}
+            </button>
+
             <button onClick={onChangeSource} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200 transition-colors"><Database size={14} /> <span className="hidden md:inline">Đổi nguồn</span></button>
             <button onClick={() => fetchGoogleSheetData()} className="p-2 text-blue-700 bg-blue-50 rounded hover:bg-blue-100" title="Tải lại"><RefreshCw size={18} /></button>
             <div className="hidden md:flex items-center gap-2 bg-slate-50 rounded p-1"><button onClick={handleUndo} disabled={history.past.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Undo size={18} /></button><button onClick={handleRedo} disabled={history.future.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Redo size={18} /></button></div>
