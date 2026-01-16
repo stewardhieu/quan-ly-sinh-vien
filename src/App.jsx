@@ -10,7 +10,7 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, ArrowUpDown, ArrowUp, ArrowDown,
-  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save
+  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, ClipboardCheck
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -60,6 +60,25 @@ const exportToExcelXML = (data, columns, filename) => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+};
+
+// --- COMPONENT: TOAST NOTIFICATION ---
+const Toast = ({ message, isVisible, onClose }) => {
+    return (
+        <AnimatePresence>
+            {isVisible && (
+                <motion.div 
+                    initial={{ opacity: 0, y: 50 }} 
+                    animate={{ opacity: 1, y: 0 }} 
+                    exit={{ opacity: 0, y: 50 }}
+                    className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium"
+                >
+                    <ClipboardCheck size={18} className="text-green-400" />
+                    {message}
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
 };
 
 // --- COMPONENT: POPUP CHỌN CỘT ---
@@ -412,6 +431,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', 'unsaved'
   const [isConfigLoaded, setIsConfigLoaded] = useState(false); // Chỉ auto-save khi đã load config xong
 
+  // TOAST STATE
+  const [toast, setToast] = useState({ message: '', visible: false });
+
   // --- NEW STATES ---
   const [bulkFilterMode, setBulkFilterMode] = useState('exact'); 
   const [activeSuggestionFilter, setActiveSuggestionFilter] = useState(null);
@@ -451,6 +473,12 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [columnWidths, setColumnWidths] = useState({});
   const tableRef = useRef(null);
   const resizingRef = useRef(null);
+
+  // Helper Toast
+  const showToast = (msg) => {
+      setToast({ message: msg, visible: true });
+      setTimeout(() => setToast({ ...toast, visible: false }), 3000);
+  };
 
   // NÂNG CẤP: Logic Reset bộ lọc thông minh (Tìm cột Mã, Họ tên...)
   const resetFilters = () => {
@@ -524,7 +552,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       }
   }, [config.id, config.name, user.accessToken]);
 
-  // AUTO SAVE EFFECT: Debounce 2 giây
+  // AUTO SAVE EFFECT: Debounce 5 giây (Tăng lên theo yêu cầu)
   useEffect(() => {
       // Chỉ chạy auto-save nếu đã load config lần đầu (tránh ghi đè dữ liệu rỗng khi mới vào)
       if (!isConfigLoaded) return;
@@ -533,7 +561,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       
       const timer = setTimeout(() => {
           performSave(charts, queryConfig);
-      }, 2000); // Đợi 2 giây sau khi ngừng thao tác
+      }, 5000); // 5 giây
 
       return () => clearTimeout(timer); // Xóa timer nếu user tiếp tục thao tác
   }, [charts, queryConfig, isConfigLoaded, performSave]);
@@ -551,15 +579,35 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
               
               // LOGIC BACKUP NGƯỢC: Nếu trên Sheet có lưu tên, hãy cập nhật lại tên cho LocalStorage
-              if (savedConfig.meta && savedConfig.meta.name && savedConfig.meta.name !== config.name) {
-                 // Cập nhật ngầm local storage (để lần sau vào trang Setup thấy tên đúng)
+              // Đây chính là tính năng đồng bộ lịch sử giữa các máy
+              if (savedConfig.meta && savedConfig.meta.name) {
                  try {
                      const history = JSON.parse(localStorage.getItem('sheet_history_v2') || '[]');
                      const uniqueKey = `${config.id}-${config.range}`;
-                     const updatedHistory = history.map(h => h.key === uniqueKey ? { ...h, name: savedConfig.meta.name } : h);
+                     
+                     // Kiểm tra xem item này đã có trong lịch sử chưa, nếu chưa thì thêm vào, nếu có thì cập nhật tên
+                     const existingItemIndex = history.findIndex(h => h.key === uniqueKey);
+                     
+                     let updatedHistory;
+                     if (existingItemIndex >= 0) {
+                         // Đã có -> Cập nhật tên mới nhất từ sheet
+                         updatedHistory = [...history];
+                         updatedHistory[existingItemIndex].name = savedConfig.meta.name;
+                     } else {
+                         // Chưa có (Máy mới) -> Thêm vào lịch sử
+                         const newItem = {
+                             key: uniqueKey,
+                             id: config.id,
+                             range: config.range,
+                             name: savedConfig.meta.name,
+                             date: new Date().toLocaleDateString('vi-VN')
+                         };
+                         updatedHistory = [newItem, ...history].slice(0, 10);
+                     }
+                     
                      localStorage.setItem('sheet_history_v2', JSON.stringify(updatedHistory));
-                     console.log("Đã đồng bộ tên từ Sheet về Local:", savedConfig.meta.name);
-                 } catch(e) {}
+                     console.log("Đã đồng bộ lịch sử từ Sheet về Local:", savedConfig.meta.name);
+                 } catch(e) { console.error("Lỗi sync ngược", e); }
               }
 
               console.log("Đã tải cấu hình từ Sheet thành công.");
@@ -717,8 +765,8 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const handleMouseEnter = (r, c) => { if (selection.isDragging) setSelection(prev => ({ ...prev, end: { row: r, col: c } })); };
   useEffect(() => { const up = () => { if (selection.isDragging) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging]);
   const getSelectionRange = useCallback(() => { const { start, end } = selection; if (start.row === null) return null; return { minR: Math.min(start.row, end.row), maxR: Math.max(start.row, end.row), minC: Math.min(start.col, end.col), maxC: Math.max(start.col, end.col) }; }, [selection]);
-  const handleCopyAll = () => { if (!resultState.data.length) return; const headers = resultState.visibleCols.join('\t'); const body = resultState.data.map(row => resultState.visibleCols.map(col => formatValue(row[col])).join('\t')).join('\n'); secureCopy(`${headers}\n${body}`); alert(`Đã copy toàn bộ ${resultState.data.length} dòng!`); };
-  const handleCopy = useCallback(() => { const rg = getSelectionRange(); if (!rg || !resultState.data.length) return; const pageData = itemsPerPage === 'all' ? sortedData : sortedData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage); const rows = pageData.slice(rg.minR, rg.maxR + 1); const cols = resultState.visibleCols; const txt = rows.map(r => { const vals = []; for (let c = rg.minC; c <= rg.maxC; c++) vals.push(formatValue(r[cols[c]])); return vals.join('\t'); }).join('\n'); secureCopy(txt); }, [getSelectionRange, resultState, currentPage, itemsPerPage]);
+  const handleCopyAll = () => { if (!resultState.data.length) return; const headers = resultState.visibleCols.join('\t'); const body = resultState.data.map(row => resultState.visibleCols.map(col => formatValue(row[col])).join('\t')).join('\n'); secureCopy(`${headers}\n${body}`); showToast(`Đã copy toàn bộ ${resultState.data.length} dòng!`); };
+  const handleCopy = useCallback(() => { const rg = getSelectionRange(); if (!rg || !resultState.data.length) return; const pageData = itemsPerPage === 'all' ? sortedData : sortedData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage); const rows = pageData.slice(rg.minR, rg.maxR + 1); const cols = resultState.visibleCols; const txt = rows.map(r => { const vals = []; for (let c = rg.minC; c <= rg.maxC; c++) vals.push(formatValue(r[cols[c]])); return vals.join('\t'); }).join('\n'); secureCopy(txt); showToast("Đã copy dữ liệu!"); }, [getSelectionRange, resultState, currentPage, itemsPerPage]);
   useEffect(() => { const kd = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'c') { e.preventDefault(); handleCopy(); } }; window.addEventListener('keydown', kd); return () => window.removeEventListener('keydown', kd); }, [handleCopy]);
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
@@ -785,7 +833,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         </div>
       </header>
 
-      <main className="flex-1 p-3 md:p-6 overflow-hidden flex flex-col gap-4 md:gap-6">
+      <main className="flex-1 p-3 md:p-6 overflow-hidden flex flex-col gap-4 md:gap-6 relative">
         {loadError && (<div className="bg-red-50 text-red-700 p-4 rounded-lg border border-red-200 flex items-center justify-between"><span>{loadError}</span><button onClick={() => setLoadError(null)}><X size={18}/></button></div>)}
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-5 flex flex-col gap-4">
@@ -881,6 +929,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                 )}
             </div>
         </div>
+
+        {/* TOAST RENDER */}
+        <Toast message={toast.message} isVisible={toast.visible} onClose={() => setToast({ ...toast, visible: false })} />
       </main>
       
       <ColumnSelectorModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} columns={allColumns} onSelect={handleColumnSelect} />
