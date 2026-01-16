@@ -140,6 +140,7 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
                         <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full" title="Esc"><X size={20}/></button>
                     </div>
                 </div>
+                
                 <div className="p-3 bg-slate-50 border-b border-slate-100">
                     <div className="relative">
                         <Search size={16} className="absolute left-3 top-2.5 text-slate-400"/>
@@ -341,6 +342,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
 
+  // NÂNG CẤP: Chuyển state Charts lên Dashboard để không bị reset khi đổi tab
   const [charts, setCharts] = useState(() => {
       const saved = localStorage.getItem('pka_dashboard_charts');
       return saved ? JSON.parse(saved) : [];
@@ -366,22 +368,30 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const tableRef = useRef(null);
   const resizingRef = useRef(null);
 
-  // LOGIC RESET TO DEFAULT
+  // NÂNG CẤP: Logic Reset bộ lọc thông minh (Tìm cột Mã, Họ tên...)
   const resetFilters = () => {
       const findCol = (keywords) => allColumns.find(c => keywords.some(k => c.toLowerCase().includes(k)));
       
       const defaultCols = [
-          findCol(['mã', 'mssv']), findCol(['họ tên', 'tên']), findCol(['khoá', 'khóa']), findCol(['khoa'])
+          findCol(['mã', 'mssv', 'code']), 
+          findCol(['họ tên', 'tên', 'name']), 
+          findCol(['khoá', 'khóa', 'course']), 
+          findCol(['khoa', 'department'])
       ].filter(Boolean);
 
-      const defaultFilterCol = findCol(['mã', 'mssv']) || '';
+      const defaultFilterCol = findCol(['mã', 'mssv', 'code']) || '';
 
       setQueryConfig({
           selectedCols: defaultCols.length > 0 ? defaultCols : allColumns.slice(0, 5),
-          bulkFilter: { column: '', values: '' },
+          bulkFilter: { column: defaultFilterCol, values: '' },
           filters: [{ id: Date.now(), column: defaultFilterCol, condition: 'contains', value: '', operator: 'AND' }]
       });
-      alert("Đã làm mới bộ lọc về mặc định!");
+      // Không alert để trải nghiệm mượt hơn
+  };
+
+  // NÂNG CẤP: Logic Update biểu đồ từ con (ChartCard)
+  const updateChart = (id, newConfig) => {
+      setCharts(prev => prev.map(c => c.id === id ? { ...c, ...newConfig } : c));
   };
 
   const fetchGoogleSheetData = useCallback(async () => {
@@ -402,7 +412,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         });
         setRawData(formattedData); setAllColumns(headers); 
         
-        // Auto select columns logic for initial load
         setQueryConfig(prev => { 
             if (prev.selectedCols.length === 0) {
                 const findCol = (keywords) => headers.find(c => keywords.some(k => c.toLowerCase().includes(k)));
@@ -422,7 +431,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   useEffect(() => { fetchGoogleSheetData(); }, [fetchGoogleSheetData]);
 
-  // Shortcut Listener
   useEffect(() => {
       const handleShortcut = (e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runQuery();
@@ -534,7 +542,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
 
-  // HANDLE SINGLE SORT
   const handleQuickSort = (key) => {
       if (sortRules.length > 0 && sortRules[0].column === key) {
           const newDir = sortRules[0].direction === 'asc' ? 'desc' : 'asc';
@@ -547,7 +554,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const sortedData = useMemo(() => {
       if (!sortRules || sortRules.length === 0) return resultState.data;
       let data = [...resultState.data];
-      
       data.sort((a, b) => {
           for (const rule of sortRules) {
               const aVal = String(a[rule.column] || '');
@@ -590,7 +596,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
             <div className="flex justify-between items-center border-b border-slate-100 pb-2 cursor-pointer" onClick={() => setIsQueryBuilderOpen(!isQueryBuilderOpen)}>
                  <h2 className="text-base md:text-lg font-bold text-blue-900 flex items-center gap-2">
                     <Filter size={20} /> Advanced Query Builder 
-                    <button onClick={(e) => { e.stopPropagation(); resetFilters(); }} title="Làm mới bộ lọc" className="p-1 hover:bg-blue-100 rounded-full text-slate-400 hover:text-blue-900 ml-2"><RotateCcw size={16}/></button>
+                    <button onClick={(e) => { e.stopPropagation(); resetFilters(); }} title="Làm mới bộ lọc (Mặc định)" className="p-1 hover:bg-blue-100 rounded-full text-slate-400 hover:text-blue-900 ml-2 transition-colors"><RotateCcw size={16}/></button>
                     {!isQueryBuilderOpen && <span className="text-xs font-normal text-slate-400 ml-2">(Mở rộng)</span>}
                  </h2>
                  <div className="flex items-center gap-2"><span className="text-xs text-slate-500 hidden md:inline">{loading ? 'Đang tải...' : `Source: ${rawData.length} dòng`}</span>{isQueryBuilderOpen ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}</div>
@@ -675,7 +681,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                             <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} onClick={() => handleQuickSort(col)} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors cursor-pointer" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden"><span className="truncate" title={col}>{col}</span>{sortRules.length > 0 && sortRules[0].column === col ? (sortRules[0].direction === 'asc' ? <ArrowUp size={12} className="text-blue-600"/> : <ArrowDown size={12} className="text-blue-600"/>) : <ArrowUpDown size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />}</div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} onClick={(e) => e.stopPropagation()}/></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
                             <div className="bg-white border-t border-slate-200 p-2 flex justify-between items-center"><div className="flex items-center gap-2"><span className="text-xs text-slate-500">Hiển thị:</span><select className="text-xs border border-slate-300 rounded p-1" value={itemsPerPage} onChange={(e) => handleItemsPerPageChange(e.target.value)}><option value="50">50 dòng</option><option value="100">100 dòng</option><option value="500">500 dòng</option><option value="1000">1000 dòng</option><option value="all">Tất cả</option></select><span className="text-xs text-slate-500 ml-2">{itemsPerPage !== 'all' ? `${(currentPage - 1) * itemsPerPage + 1} - ${Math.min(currentPage * itemsPerPage, sortedData.length)} / ${sortedData.length}` : `Toàn bộ ${sortedData.length} dòng`}</span></div>{itemsPerPage !== 'all' && (<div className="flex gap-2"><button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowLeft size={16}/></button><button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowRight size={16}/></button></div>)}</div>
                         </>
-                    ) : ( <SuperAnalytics data={resultState.data} charts={charts} setCharts={setCharts} /> )
+                    ) : ( <SuperAnalytics data={resultState.data} charts={charts} setCharts={setCharts} onUpdate={updateChart} /> )
                 )}
             </div>
         </div>
@@ -688,35 +694,34 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   );
 };
 
-// --- CHART COMPONENTS (Nâng cấp Stack/Segment) ---
-const ChartCard = ({ config, data, onDelete }) => {
-    const [type, setType] = useState(config.type || 'bar');
-    const [xAxis, setXAxis] = useState(config.x);
-    const [segmentBy, setSegmentBy] = useState(''); // Tính năng mới: Chia nhóm theo (Segment By)
+// --- CHART COMPONENTS (Nâng cấp Stack/Segment + Controlled) ---
+const ChartCard = ({ config, data, onDelete, onUpdate }) => {
+    // Không dùng state nội bộ nữa, dùng props từ config
+    const type = config.type || 'bar';
+    const xAxis = config.x || '';
+    const segmentBy = config.segmentBy || '';
     
     const columns = Object.keys(data[0] || {});
 
+    // Helper update function
+    const updateConfig = (key, value) => {
+        onUpdate({ [key]: value });
+    };
+
     // Logic xử lý dữ liệu phức tạp (Segment / Stack)
     const processed = useMemo(() => {
-        // 1. Lấy danh sách các segment duy nhất (nếu có chọn segmentBy)
         const segments = segmentBy ? [...new Set(data.map(r => r[segmentBy] || 'N/A'))].sort() : ['count'];
-        
-        // 2. Gom nhóm theo trục X
         const grouped = data.reduce((acc, row) => {
             const xVal = row[xAxis] || 'N/A';
             if (!acc[xVal]) {
                 acc[xVal] = { name: xVal };
                 segments.forEach(seg => acc[xVal][seg] = 0);
             }
-            
-            // Nếu có segmentBy, tăng biến đếm của segment đó. Nếu không, tăng count chung.
             const segKey = segmentBy ? (row[segmentBy] || 'N/A') : 'count';
             acc[xVal][segKey] += 1;
-            
             return acc;
         }, {});
 
-        // 3. Chuyển về mảng
         return {
             data: Object.values(grouped).sort((a,b) => b.count - a.count).slice(0, 20),
             keys: segments
@@ -729,7 +734,6 @@ const ChartCard = ({ config, data, onDelete }) => {
         const Cmp = { bar: BarChart, line: LineChart, area: AreaChart, pie: PieChart }[type] || BarChart;
         
         if (type === 'pie') {
-             // Pie chart không support segment tốt, nên chỉ vẽ tổng
              return (
                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -748,11 +752,9 @@ const ChartCard = ({ config, data, onDelete }) => {
                     <YAxis />
                     <RechartsTooltip />
                     <Legend />
-                    {/* Render dynamic bars based on segments */}
                     {processed.keys.map((key, idx) => {
                         const color = COLORS[idx % COLORS.length];
                         const props = { key, dataKey: key, fill: color, stroke: color, stackId: segmentBy ? 'a' : undefined, name: key === 'count' ? 'Số lượng' : key };
-                        
                         if (type === 'bar') return <Bar {...props} />;
                         if (type === 'line') return <Line type="monotone" {...props} strokeWidth={2} />;
                         if (type === 'area') return <Area type="monotone" {...props} />;
@@ -767,14 +769,14 @@ const ChartCard = ({ config, data, onDelete }) => {
         <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-96 flex flex-col">
             <div className="flex flex-wrap justify-between items-center mb-4 border-b border-slate-100 pb-2 gap-2">
                 <div className="flex gap-2 items-center flex-1 overflow-x-auto">
-                    <select className="text-xs border rounded p-1 font-bold text-blue-900" value={type} onChange={e=>setType(e.target.value)}><option value="bar">Cột</option><option value="line">Đường</option><option value="pie">Tròn</option><option value="area">Vùng</option></select>
+                    <select className="text-xs border rounded p-1 font-bold text-blue-900" value={type} onChange={e=>updateConfig('type', e.target.value)}><option value="bar">Cột</option><option value="line">Đường</option><option value="pie">Tròn</option><option value="area">Vùng</option></select>
                     <span className="text-xs text-slate-400 whitespace-nowrap">Trục X:</span>
-                    <select className="text-xs border rounded p-1 max-w-[100px]" value={xAxis} onChange={e=>setXAxis(e.target.value)}>{columns.map(c=><option key={c} value={c}>{c}</option>)}</select>
+                    <select className="text-xs border rounded p-1 max-w-[100px]" value={xAxis} onChange={e=>updateConfig('x', e.target.value)}>{columns.map(c=><option key={c} value={c}>{c}</option>)}</select>
                     
                     {type !== 'pie' && (
                         <>
                             <span className="text-xs text-slate-400 whitespace-nowrap flex items-center gap-1"><Split size={12}/> Chia theo:</span>
-                            <select className="text-xs border rounded p-1 max-w-[100px]" value={segmentBy} onChange={e=>setSegmentBy(e.target.value)}>
+                            <select className="text-xs border rounded p-1 max-w-[100px]" value={segmentBy} onChange={e=>updateConfig('segmentBy', e.target.value)}>
                                 <option value="">(Không)</option>
                                 {columns.map(c=><option key={c} value={c}>{c}</option>)}
                             </select>
@@ -789,7 +791,7 @@ const ChartCard = ({ config, data, onDelete }) => {
 };
 
 // --- SUPER ANALYTICS DASHBOARD ---
-const SuperAnalytics = ({ data, charts, setCharts }) => {
+const SuperAnalytics = ({ data, charts, setCharts, onUpdate }) => {
     if (!data || data.length === 0) return <div className="p-10 text-center text-slate-400">Chưa có dữ liệu. Vui lòng chạy truy vấn.</div>;
     const columns = Object.keys(data[0]);
 
@@ -816,7 +818,7 @@ const SuperAnalytics = ({ data, charts, setCharts }) => {
                         <button key={t.label} onClick={() => addChart({ x: t.x, y: ['count'], type: t.type || 'bar' })} className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium hover:bg-blue-100 border border-blue-200 transition-colors">+ {t.label}</button>
                     ))}
                     <div className="h-6 w-px bg-slate-200 mx-2"></div>
-                    <button onClick={() => addChart({ x: columns[0], y: ['count'], type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
+                    <button onClick={() => addChart({ x: columns[0], y: 'count', type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
                     {charts.length > 0 && <button onClick={() => setCharts([])} className="ml-auto text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 size={16}/></button>}
                 </div>
             </div>
@@ -830,7 +832,13 @@ const SuperAnalytics = ({ data, charts, setCharts }) => {
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
                         {charts.map(chart => (
-                            <ChartCard key={chart.id} config={chart} data={data} onDelete={() => removeChart(chart.id)} />
+                            <ChartCard 
+                                key={chart.id} 
+                                config={chart} 
+                                data={data} 
+                                onDelete={() => removeChart(chart.id)} 
+                                onUpdate={(newData) => onUpdate(chart.id, newData)}
+                            />
                         ))}
                     </div>
                 )}
