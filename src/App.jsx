@@ -3,14 +3,14 @@ import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, AreaChart, Area, ComposedChart,
+  PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { 
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
-  GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, ArrowUpDown, ArrowUp, ArrowDown,
-  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Save
+  GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, ArrowUpDown, ArrowUp, ArrowDown,
+  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -260,7 +260,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
       setLoading(false);
     },
     onError: (error) => { console.error("Login Failed:", error); alert("Đăng nhập thất bại."); },
-    // THAY ĐỔI QUAN TRỌNG: Đổi scope sang 'spreadsheets' (không có .readonly) để cho phép ghi cấu hình
     scope: "https://www.googleapis.com/auth/spreadsheets",
   });
 
@@ -284,7 +283,10 @@ const LoginScreen = ({ onLoginSuccess }) => {
 const SetupScreen = ({ onConfig }) => {
   const [sheetId, setSheetId] = useState(localStorage.getItem('last_sheet_id') || '');
   const [range, setRange] = useState(localStorage.getItem('last_sheet_range') || 'Sheet1!A:Z');
+  const [name, setName] = useState(''); // Tên gợi nhớ mới
   const [history, setHistory] = useState([]);
+  const [editingId, setEditingId] = useState(null); // ID của mục đang sửa tên
+  const [tempName, setTempName] = useState(''); // Tên tạm khi đang sửa
 
   useEffect(() => {
       const savedHistory = JSON.parse(localStorage.getItem('sheet_history') || '[]');
@@ -293,19 +295,67 @@ const SetupScreen = ({ onConfig }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const newHistory = [{ id: sheetId, range: range, date: new Date().toLocaleDateString('vi-VN') }, ...history.filter(h => h.id !== sheetId)].slice(0, 5);
+    
+    // Logic mới: Đặt key duy nhất dựa trên ID + Range
+    const uniqueKey = `${sheetId}|${range}`;
+    const displayName = name || `Dữ liệu ${new Date().toLocaleDateString('vi-VN')}`;
+
+    const newEntry = { 
+        uniqueKey, // Key để phân biệt
+        id: sheetId, 
+        range: range, 
+        name: displayName,
+        date: new Date().toLocaleString('vi-VN') 
+    };
+
+    // Lọc bỏ mục cũ nếu trùng ID VÀ Range (để cập nhật date/name mới)
+    const otherHistory = history.filter(h => h.uniqueKey !== uniqueKey && !(h.id === sheetId && h.range === range)); // Check tương thích bản cũ
+    const newHistory = [newEntry, ...otherHistory].slice(0, 10);
+
+    setHistory(newHistory);
     localStorage.setItem('sheet_history', JSON.stringify(newHistory));
     localStorage.setItem('last_sheet_id', sheetId);
     localStorage.setItem('last_sheet_range', range);
+    
     onConfig(sheetId, range);
   };
 
-  const useHistoryItem = (item) => { setSheetId(item.id); setRange(item.range); };
-  const deleteHistoryItem = (e, idToDelete) => {
+  const useHistoryItem = (item) => { 
+      setSheetId(item.id); 
+      setRange(item.range);
+      setName(item.name || ''); 
+  };
+
+  const deleteHistoryItem = (e, itemToDelete) => {
       e.stopPropagation();
-      const newHistory = history.filter(h => h.id !== idToDelete);
+      // Xóa dựa trên uniqueKey hoặc fallback ID+Range
+      const newHistory = history.filter(h => {
+          const hKey = h.uniqueKey || `${h.id}|${h.range}`;
+          const tKey = itemToDelete.uniqueKey || `${itemToDelete.id}|${itemToDelete.range}`;
+          return hKey !== tKey;
+      });
       setHistory(newHistory);
       localStorage.setItem('sheet_history', JSON.stringify(newHistory));
+  };
+
+  const startEditing = (e, item) => {
+      e.stopPropagation();
+      setEditingId(item.uniqueKey || `${item.id}|${item.range}`);
+      setTempName(item.name || 'Dữ liệu không tên');
+  };
+
+  const saveEditName = (e) => {
+      e.stopPropagation();
+      const newHistory = history.map(h => {
+          const hKey = h.uniqueKey || `${h.id}|${h.range}`;
+          if (hKey === editingId) {
+              return { ...h, name: tempName };
+          }
+          return h;
+      });
+      setHistory(newHistory);
+      localStorage.setItem('sheet_history', JSON.stringify(newHistory));
+      setEditingId(null);
   };
 
   return (
@@ -313,10 +363,42 @@ const SetupScreen = ({ onConfig }) => {
       <div className="w-full max-w-lg p-8 bg-white rounded-xl shadow-lg border border-slate-200">
         <h2 className="text-xl font-bold text-blue-900 mb-6 flex items-center gap-2"><Settings className="w-5 h-5" /> Cấu hình Nguồn Dữ liệu</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Spreadsheet ID</label><input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID của Google Sheet..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Data Range</label><input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="Ví dụ: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
-          {history.length > 0 && (<div className="mt-4 pt-4 border-t border-slate-100"><p className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> Gần đây</p><div className="space-y-2">{history.map((h, idx) => (<div key={idx} onClick={() => useHistoryItem(h)} className="group relative text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors"><div className="font-medium text-slate-700 truncate">{h.id}</div><div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div><button onClick={(e) => deleteHistoryItem(e, h.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button></div>))}</div></div>)}
-          <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4"><Check className="w-4 h-4" /> Kết nối Dữ liệu</button>
+          <div><label className="block text-sm font-medium text-slate-700 mb-1">Tên gợi nhớ (Tùy chọn)</label><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: Điểm thi K19..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
+          <div><label className="block text-sm font-medium text-slate-700 mb-1">Spreadsheet ID (*)</label><input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID của Google Sheet..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none font-mono text-xs" /></div>
+          <div><label className="block text-sm font-medium text-slate-700 mb-1">Data Range (*)</label><input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="Ví dụ: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
+          
+          {history.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> Đã lưu gần đây</p>
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {history.map((h, idx) => {
+                        const isEditing = editingId === (h.uniqueKey || `${h.id}|${h.range}`);
+                        return (
+                            <div key={idx} onClick={() => !isEditing && useHistoryItem(h)} className={`group relative text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors ${isEditing ? 'ring-2 ring-blue-200 bg-white' : ''}`}>
+                                {isEditing ? (
+                                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                        <input autoFocus type="text" className="flex-1 border border-slate-300 rounded px-2 py-1" value={tempName} onChange={e => setTempName(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveEditName(e)} />
+                                        <button onClick={saveEditName} className="p-1 text-green-600 hover:bg-green-100 rounded"><Save size={14}/></button>
+                                        <button onClick={(e) => { e.stopPropagation(); setEditingId(null); }} className="p-1 text-slate-400 hover:bg-slate-100 rounded"><X size={14}/></button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="font-bold text-blue-900 truncate pr-16">{h.name || 'Dữ liệu không tên'}</div>
+                                        <div className="font-mono text-slate-500 truncate mt-0.5 text-[10px]">{h.id}</div>
+                                        <div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div>
+                                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={(e) => startEditing(e, h)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded" title="Sửa tên"><Pencil size={14} /></button>
+                                            <button onClick={(e) => deleteHistoryItem(e, h)} className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-100 rounded" title="Xóa"><Trash2 size={14} /></button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+          )}
+          <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4"><Check className="w-4 h-4" /> Kết nối & Lưu</button>
         </form>
       </div>
     </motion.div>
