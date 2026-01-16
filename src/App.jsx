@@ -10,9 +10,10 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, ArrowUpDown, ArrowUp, ArrowDown,
-  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split, ListFilter
+  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split, ListFilter, RotateCcw
 } from 'lucide-react';
 
+// ... (Giữ nguyên phần CẤU HÌNH, UTILS, EXPORT, CÁC MODAL COMPONENT cũ) ...
 // --- CẤU HÌNH ---
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
 
@@ -168,7 +169,7 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
     );
 };
 
-// --- COMPONENT: ADVANCED SORT MODAL (Sắp xếp nâng cao) ---
+// --- COMPONENT: ADVANCED SORT MODAL ---
 const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => {
     const [localRules, setLocalRules] = useState(sortRules || []);
 
@@ -233,8 +234,7 @@ const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => 
     );
 };
 
-// --- MAIN COMPONENTS ---
-
+// --- LOGIN & SETUP SCREENS (Giữ nguyên) ---
 const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const login = useGoogleLogin({
@@ -321,6 +321,7 @@ const SetupScreen = ({ onConfig }) => {
   );
 };
 
+// --- DASHBOARD ---
 const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [rawData, setRawData] = useState([]);
   const [allColumns, setAllColumns] = useState([]);
@@ -331,7 +332,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [bulkFilterMode, setBulkFilterMode] = useState('exact'); 
   const [activeSuggestionFilter, setActiveSuggestionFilter] = useState(null);
 
-  // Sort: Use Array for Multi-column Sort
   const [sortRules, setSortRules] = useState([]); 
   const [isSortModalOpen, setIsSortModalOpen] = useState(false);
 
@@ -421,6 +421,20 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const handleDragStart = (e, ci) => e.dataTransfer.setData("colIndex", ci);
   const handleDrop = (e, ti) => { const si = parseInt(e.dataTransfer.getData("colIndex")); if (si === ti) return; const nc = [...resultState.visibleCols]; const [mc] = nc.splice(si, 1); nc.splice(ti, 0, mc); setResultState(p => ({ ...p, visibleCols: nc })); };
 
+  // --- LOGIC RESET ---
+  const handleResetFilters = () => {
+      // Tìm các cột mặc định dựa trên tên
+      const defaultCols = allColumns.filter(c => ['msv','mã sinh viên','họ tên','họ và tên','khoá','khóa','khoa','lớp'].some(k => c.toLowerCase().includes(k)));
+      const msvCol = allColumns.find(c => c.toLowerCase().includes('mã')) || '';
+
+      setQueryConfig({
+          selectedCols: defaultCols.length > 0 ? defaultCols : allColumns.slice(0, 5),
+          bulkFilter: { column: msvCol, values: '' },
+          filters: [{ id: Date.now(), column: msvCol, condition: 'contains', value: '', operator: 'AND' }]
+      });
+      alert("Đã đặt lại bộ lọc về mặc định.");
+  };
+
   const addFilterCondition = () => setQueryConfig(prev => ({ ...prev, filters: [...prev.filters, { id: Date.now(), column: '', condition: 'contains', value: '', operator: 'AND' }] }));
   const removeFilterCondition = (id) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.filter(f => f.id !== id) }));
   const updateFilter = (id, field, value) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.map(f => f.id === id ? { ...f, [field]: value } : f) }));
@@ -433,6 +447,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const checkCondition = (row, filter) => {
       if (!filter.column || !filter.value) return true; 
       const cellVal = String(row[filter.column] || '').toLowerCase();
+      // FIX: Tách chuỗi bằng cả dấu phẩy và chấm phẩy
       const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
       
       return searchVals.some(searchVal => {
@@ -508,12 +523,10 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
 
-  // HANDLE SINGLE SORT (Quick Sort)
   const handleQuickSort = (key) => {
-      // Nếu đã có rule cho key này ở đầu danh sách, đảo ngược. Nếu không, reset và tạo rule mới.
       if (sortRules.length > 0 && sortRules[0].column === key) {
           const newDir = sortRules[0].direction === 'asc' ? 'desc' : 'asc';
-          setSortRules([{ column: key, direction: newDir }]); // Override all for quick sort
+          setSortRules([{ column: key, direction: newDir }]); 
       } else {
           setSortRules([{ column: key, direction: 'asc' }]);
       }
@@ -527,21 +540,12 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
           for (const rule of sortRules) {
               const aVal = String(a[rule.column] || '');
               const bVal = String(b[rule.column] || '');
-              
-              // So sánh
               let comparison = 0;
               const aNum = parseFloat(aVal);
               const bNum = parseFloat(bVal);
-              
-              if (!isNaN(aNum) && !isNaN(bNum)) {
-                  comparison = aNum - bNum;
-              } else {
-                  comparison = aVal.localeCompare(bVal, 'vi');
-              }
-
-              if (comparison !== 0) {
-                  return rule.direction === 'asc' ? comparison : -comparison;
-              }
+              if (!isNaN(aNum) && !isNaN(bNum)) { comparison = aNum - bNum; } 
+              else { comparison = aVal.localeCompare(bVal, 'vi'); }
+              if (comparison !== 0) { return rule.direction === 'asc' ? comparison : -comparison; }
           }
           return 0;
       });
@@ -574,7 +578,10 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-5 flex flex-col gap-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2 cursor-pointer" onClick={() => setIsQueryBuilderOpen(!isQueryBuilderOpen)}>
                  <h2 className="text-base md:text-lg font-bold text-blue-900 flex items-center gap-2"><Filter size={20} /> Advanced Query Builder {!isQueryBuilderOpen && <span className="text-xs font-normal text-slate-400 ml-2">(Mở rộng)</span>}</h2>
-                 <div className="flex items-center gap-2"><span className="text-xs text-slate-500 hidden md:inline">{loading ? 'Đang tải...' : `Source: ${rawData.length} dòng`}</span>{isQueryBuilderOpen ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}</div>
+                 <div className="flex items-center gap-2">
+                    <button onClick={(e) => { e.stopPropagation(); handleResetFilters(); }} className="mr-2 text-slate-400 hover:text-blue-700 flex items-center gap-1 text-xs px-2 py-1 hover:bg-slate-100 rounded"><RotateCcw size={14}/> Đặt lại</button>
+                    <span className="text-xs text-slate-500 hidden md:inline">{loading ? 'Đang tải...' : `Source: ${rawData.length} dòng`}</span>{isQueryBuilderOpen ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}
+                 </div>
             </div>
 
             <AnimatePresence>
@@ -797,7 +804,7 @@ const SuperAnalytics = ({ data, charts, setCharts }) => {
                         <button key={t.label} onClick={() => addChart({ x: t.x, y: ['count'], type: t.type || 'bar' })} className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium hover:bg-blue-100 border border-blue-200 transition-colors">+ {t.label}</button>
                     ))}
                     <div className="h-6 w-px bg-slate-200 mx-2"></div>
-                    <button onClick={() => addChart({ x: columns[0], y: 'count', type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
+                    <button onClick={() => addChart({ x: columns[0], y: ['count'], type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
                     {charts.length > 0 && <button onClick={() => setCharts([])} className="ml-auto text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 size={16}/></button>}
                 </div>
             </div>
