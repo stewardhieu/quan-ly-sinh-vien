@@ -1,7 +1,3 @@
-{
-type: uploaded file
-fileName: App.jsx
-fullContent:
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
@@ -969,5 +965,4 @@ export default function App() {
   if (!user) return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
   if (!sheetConfig) return <SetupScreen onConfig={handleConfig} />;
   return <Dashboard user={user} config={sheetConfig} onLogout={handleLogout} onChangeSource={handleChangeSource} />;
-}
 }
