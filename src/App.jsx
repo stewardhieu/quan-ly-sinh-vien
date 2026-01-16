@@ -281,125 +281,122 @@ const LoginScreen = ({ onLoginSuccess }) => {
 };
 
 const SetupScreen = ({ onConfig }) => {
-  const [sheetId, setSheetId] = useState(localStorage.getItem('last_sheet_id') || '');
-  const [range, setRange] = useState(localStorage.getItem('last_sheet_range') || 'Sheet1!A:Z');
-  const [name, setName] = useState(''); // Tên gợi nhớ mới
+  const [sheetId, setSheetId] = useState('');
+  const [range, setRange] = useState('Sheet1!A:Z');
+  const [name, setName] = useState(''); // Tên gợi nhớ
   const [history, setHistory] = useState([]);
-  const [editingId, setEditingId] = useState(null); // ID của mục đang sửa tên
-  const [tempName, setTempName] = useState(''); // Tên tạm khi đang sửa
+  const [editingId, setEditingId] = useState(null); // ID của item đang sửa tên
 
+  // Load lịch sử từ localStorage khi khởi chạy
   useEffect(() => {
-      const savedHistory = JSON.parse(localStorage.getItem('sheet_history') || '[]');
-      setHistory(savedHistory);
+      try {
+          const savedHistory = JSON.parse(localStorage.getItem('sheet_history_v2') || '[]');
+          setHistory(savedHistory);
+          // Tự động điền item mới nhất
+          if (savedHistory.length > 0) {
+              const latest = savedHistory[0];
+              setSheetId(latest.id);
+              setRange(latest.range);
+              setName(latest.name || '');
+          }
+      } catch (e) { console.error("Lỗi đọc lịch sử", e); }
   }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    
-    // Logic mới: Đặt key duy nhất dựa trên ID + Range
-    const uniqueKey = `${sheetId}|${range}`;
-    const displayName = name || `Dữ liệu ${new Date().toLocaleDateString('vi-VN')}`;
+    const cleanId = sheetId.trim();
+    const cleanRange = range.trim();
+    const cleanName = name.trim();
+    const uniqueKey = `${cleanId}-${cleanRange}`; // Key duy nhất: ID + Range
 
-    const newEntry = { 
-        uniqueKey, // Key để phân biệt
-        id: sheetId, 
-        range: range, 
-        name: displayName,
-        date: new Date().toLocaleString('vi-VN') 
+    // Tạo object lịch sử mới
+    const newItem = {
+        key: uniqueKey,
+        id: cleanId,
+        range: cleanRange,
+        name: cleanName || `${cleanRange} (${cleanId.slice(0, 6)}...)`, // Tên mặc định nếu không nhập
+        date: new Date().toLocaleDateString('vi-VN')
     };
 
-    // Lọc bỏ mục cũ nếu trùng ID VÀ Range (để cập nhật date/name mới)
-    const otherHistory = history.filter(h => h.uniqueKey !== uniqueKey && !(h.id === sheetId && h.range === range)); // Check tương thích bản cũ
-    const newHistory = [newEntry, ...otherHistory].slice(0, 10);
-
-    setHistory(newHistory);
-    localStorage.setItem('sheet_history', JSON.stringify(newHistory));
-    localStorage.setItem('last_sheet_id', sheetId);
-    localStorage.setItem('last_sheet_range', range);
+    // Lọc bỏ item cũ trùng key (để đưa item mới lên đầu)
+    const newHistory = [newItem, ...history.filter(h => h.key !== uniqueKey)].slice(0, 10); // Lưu 10 item gần nhất
     
-    onConfig(sheetId, range);
+    setHistory(newHistory);
+    localStorage.setItem('sheet_history_v2', JSON.stringify(newHistory));
+    
+    // Gửi cấu hình lên App
+    onConfig(cleanId, cleanRange, newItem.name);
   };
 
-  const useHistoryItem = (item) => { 
-      setSheetId(item.id); 
+  const useHistoryItem = (item) => {
+      setSheetId(item.id);
       setRange(item.range);
-      setName(item.name || ''); 
+      setName(item.name);
   };
 
-  const deleteHistoryItem = (e, itemToDelete) => {
+  const deleteHistoryItem = (e, keyToDelete) => {
       e.stopPropagation();
-      // Xóa dựa trên uniqueKey hoặc fallback ID+Range
-      const newHistory = history.filter(h => {
-          const hKey = h.uniqueKey || `${h.id}|${h.range}`;
-          const tKey = itemToDelete.uniqueKey || `${itemToDelete.id}|${itemToDelete.range}`;
-          return hKey !== tKey;
-      });
+      const newHistory = history.filter(h => h.key !== keyToDelete);
       setHistory(newHistory);
-      localStorage.setItem('sheet_history', JSON.stringify(newHistory));
+      localStorage.setItem('sheet_history_v2', JSON.stringify(newHistory));
   };
 
+  // Logic sửa tên trực tiếp trên danh sách
   const startEditing = (e, item) => {
       e.stopPropagation();
-      setEditingId(item.uniqueKey || `${item.id}|${item.range}`);
-      setTempName(item.name || 'Dữ liệu không tên');
-  };
-
-  const saveEditName = (e) => {
-      e.stopPropagation();
-      const newHistory = history.map(h => {
-          const hKey = h.uniqueKey || `${h.id}|${h.range}`;
-          if (hKey === editingId) {
-              return { ...h, name: tempName };
-          }
-          return h;
-      });
-      setHistory(newHistory);
-      localStorage.setItem('sheet_history', JSON.stringify(newHistory));
-      setEditingId(null);
+      setEditingId(item.key);
+      // Khi bấm sửa, điền thông tin vào form chính để sửa
+      setSheetId(item.id);
+      setRange(item.range);
+      setName(item.name);
   };
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-lg p-8 bg-white rounded-xl shadow-lg border border-slate-200">
         <h2 className="text-xl font-bold text-blue-900 mb-6 flex items-center gap-2"><Settings className="w-5 h-5" /> Cấu hình Nguồn Dữ liệu</h2>
+        
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Tên gợi nhớ (Tùy chọn)</label><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: Điểm thi K19..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Spreadsheet ID (*)</label><input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID của Google Sheet..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none font-mono text-xs" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Data Range (*)</label><input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="Ví dụ: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" /></div>
-          
-          {history.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-slate-100">
-                <p className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> Đã lưu gần đây</p>
-                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                    {history.map((h, idx) => {
-                        const isEditing = editingId === (h.uniqueKey || `${h.id}|${h.range}`);
-                        return (
-                            <div key={idx} onClick={() => !isEditing && useHistoryItem(h)} className={`group relative text-xs p-2 bg-slate-50 hover:bg-blue-50 rounded cursor-pointer border border-slate-200 hover:border-blue-200 transition-colors ${isEditing ? 'ring-2 ring-blue-200 bg-white' : ''}`}>
-                                {isEditing ? (
-                                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                        <input autoFocus type="text" className="flex-1 border border-slate-300 rounded px-2 py-1" value={tempName} onChange={e => setTempName(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveEditName(e)} />
-                                        <button onClick={saveEditName} className="p-1 text-green-600 hover:bg-green-100 rounded"><Save size={14}/></button>
-                                        <button onClick={(e) => { e.stopPropagation(); setEditingId(null); }} className="p-1 text-slate-400 hover:bg-slate-100 rounded"><X size={14}/></button>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="font-bold text-blue-900 truncate pr-16">{h.name || 'Dữ liệu không tên'}</div>
-                                        <div className="font-mono text-slate-500 truncate mt-0.5 text-[10px]">{h.id}</div>
-                                        <div className="text-slate-400 flex justify-between mt-1"><span>{h.range}</span> <span>{h.date}</span></div>
-                                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={(e) => startEditing(e, h)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded" title="Sửa tên"><Pencil size={14} /></button>
-                                            <button onClick={(e) => deleteHistoryItem(e, h)} className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-100 rounded" title="Xóa"><Trash2 size={14} /></button>
-                                        </div>
-                                    </>
-                                )}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Tên dữ liệu (Gợi nhớ)</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: K19 - CNTT (Tuỳ chọn)" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Spreadsheet ID</label>
+            <input type="text" required value={sheetId} onChange={(e) => setSheetId(e.target.value)} placeholder="Dán ID của Google Sheet..." className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none font-mono text-sm" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Data Range (Tab)</label>
+            <input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="Ví dụ: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none font-mono text-sm" />
+          </div>
+
+          <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4">
+            <Check className="w-4 h-4" /> {editingId ? 'Cập nhật Dữ liệu' : 'Kết nối Dữ liệu'}
+          </button>
+        </form>
+
+        {history.length > 0 && (
+            <div className="mt-6 pt-4 border-t border-slate-100">
+                <p className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1"><History size={12}/> Đã lưu gần đây</p>
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {history.map((h) => (
+                        <div key={h.key} onClick={() => useHistoryItem(h)} className={`group relative p-3 bg-slate-50 hover:bg-blue-50 rounded-lg cursor-pointer border transition-all ${sheetId === h.id && range === h.range ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
+                            <div className="flex justify-between items-start">
+                                <div className="font-bold text-blue-900 text-sm truncate pr-6">{h.name}</div>
+                                <div className="text-[10px] text-slate-400 whitespace-nowrap">{h.date}</div>
                             </div>
-                        );
-                    })}
+                            <div className="text-xs text-slate-500 mt-1 font-mono truncate" title={h.id}>ID: {h.id.slice(0,8)}...</div>
+                            <div className="text-xs text-slate-500 font-mono truncate">Tab: {h.range}</div>
+                            
+                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/80 rounded backdrop-blur-sm">
+                                <button onClick={(e) => startEditing(e, h)} className="p-1.5 text-slate-500 hover:text-blue-600 rounded hover:bg-blue-100" title="Sửa tên"><Pencil size={14} /></button>
+                                <button onClick={(e) => deleteHistoryItem(e, h.key)} className="p-1.5 text-slate-500 hover:text-red-600 rounded hover:bg-red-100" title="Xóa"><Trash2 size={14} /></button>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
-          )}
-          <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4"><Check className="w-4 h-4" /> Kết nối & Lưu</button>
-        </form>
+        )}
       </div>
     </motion.div>
   );
@@ -489,7 +486,10 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
           const configData = {
               charts: currentCharts,
               queryConfig: currentQuery,
-              updatedAt: new Date().toISOString()
+              meta: { 
+                  name: config.name, // Lưu tên gợi nhớ vào config sheet luôn
+                  lastUpdated: new Date().toISOString()
+              }
           };
           const configString = JSON.stringify(configData);
 
@@ -522,7 +522,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
           console.error("Lỗi lưu cấu hình:", error);
           setSaveStatus('unsaved'); // Để user biết lỗi
       }
-  }, [config.id, user.accessToken]);
+  }, [config.id, config.name, user.accessToken]);
 
   // AUTO SAVE EFFECT: Debounce 2 giây
   useEffect(() => {
@@ -549,6 +549,19 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               // Cập nhật state mà không kích hoạt auto-save ngay lập tức
               if (savedConfig.charts) setCharts(savedConfig.charts);
               if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
+              
+              // LOGIC BACKUP NGƯỢC: Nếu trên Sheet có lưu tên, hãy cập nhật lại tên cho LocalStorage
+              if (savedConfig.meta && savedConfig.meta.name && savedConfig.meta.name !== config.name) {
+                 // Cập nhật ngầm local storage (để lần sau vào trang Setup thấy tên đúng)
+                 try {
+                     const history = JSON.parse(localStorage.getItem('sheet_history_v2') || '[]');
+                     const uniqueKey = `${config.id}-${config.range}`;
+                     const updatedHistory = history.map(h => h.key === uniqueKey ? { ...h, name: savedConfig.meta.name } : h);
+                     localStorage.setItem('sheet_history_v2', JSON.stringify(updatedHistory));
+                     console.log("Đã đồng bộ tên từ Sheet về Local:", savedConfig.meta.name);
+                 } catch(e) {}
+              }
+
               console.log("Đã tải cấu hình từ Sheet thành công.");
           }
       } catch (error) {
@@ -756,7 +769,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
       <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
-        <div className="flex items-center gap-3"><div className="bg-blue-900 text-white p-2 rounded hidden md:block"><LayoutTemplate size={20} /></div><div><h1 className="font-bold text-blue-900 leading-tight text-sm md:text-base">PKA MANAGEMENT</h1><p className="text-xs text-slate-500 hidden md:block">Hệ thống Tra cứu & Phân tích dữ liệu</p></div></div>
+        <div className="flex items-center gap-3"><div className="bg-blue-900 text-white p-2 rounded hidden md:block"><LayoutTemplate size={20} /></div><div><h1 className="font-bold text-blue-900 leading-tight text-sm md:text-base">{config.name || 'PKA MANAGEMENT'}</h1><p className="text-xs text-slate-500 hidden md:block">Hệ thống Tra cứu & Phân tích dữ liệu</p></div></div>
         <div className="flex items-center gap-2 md:gap-4">
             
             {/* TRẠNG THÁI AUTO SAVE */}
@@ -1040,7 +1053,8 @@ export default function App() {
   }, []);
 
   const handleLoginSuccess = (u) => setUser(u);
-  const handleConfig = (id, range) => setSheetConfig({ id, range });
+  // Thay đổi: Nhận thêm name (tên gợi nhớ) từ SetupScreen
+  const handleConfig = (id, range, name) => setSheetConfig({ id, range, name });
   const handleLogout = () => { setUser(null); setSheetConfig(null); localStorage.removeItem('pka_user_session'); };
   const handleChangeSource = () => setSheetConfig(null);
 
