@@ -10,13 +10,14 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, LineChart as LineIcon, PieChart as PieIcon, ArrowUpDown, ArrowUp, ArrowDown,
-  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split, ListFilter, RotateCcw
+  MousePointer2, Type, CheckCircle2, Circle, CheckSquare, Square, Split, ListFilter, RotateCcw, Cloud, CloudUpload, CloudDownload
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
+const CONFIG_SHEET_NAME = "_PKA_CONFIG"; // Tên sheet ẩn dùng để lưu cấu hình
 
-// --- UTILS ---
+// --- UTILS (Giữ nguyên các hàm formatValue, secureCopy, exportToExcelXML...) ---
 const formatValue = (value) => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'object') return JSON.stringify(value);
@@ -61,7 +62,7 @@ const exportToExcelXML = (data, columns, filename) => {
   document.body.removeChild(link);
 };
 
-// --- COMPONENT: POPUP CHỌN CỘT ---
+// --- COMPONENT: POPUP VÀ MODAL (Giữ nguyên ColumnSelectorModal, MultiValueSelectModal, AdvancedSortModal) ---
 const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Chọn cột dữ liệu" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const inputRef = useRef(null);
@@ -74,10 +75,8 @@ const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Ch�
             return () => window.removeEventListener('keydown', handleKeyDown);
         }
     }, [isOpen, onClose]);
-
     if (!isOpen) return null;
     const filteredCols = columns.filter(c => c.toLowerCase().includes(searchTerm.toLowerCase()));
-    
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white w-full max-w-md rounded-xl shadow-2xl flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
@@ -89,12 +88,10 @@ const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Ch�
     );
 };
 
-// --- COMPONENT: POPUP ĐA CHỌN GIÁ TRỊ ---
 const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave, title = "Chọn giá trị" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const [selected, setSelected] = useState(new Set());
     const inputRef = useRef(null);
-
     useEffect(() => {
         if (isOpen) {
             const initSet = new Set(initialValue ? String(initialValue).split(/[,;]+/).map(s => s.trim()).filter(s => s) : []);
@@ -103,131 +100,49 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
             if (inputRef.current) setTimeout(() => inputRef.current.focus(), 100);
         }
     }, [isOpen, initialValue]);
-
     useEffect(() => {
         if (!isOpen) return;
-        const handleKeyDown = (e) => {
-            if (e.key === 'Escape') onClose();
-            if (e.key === 'Enter') handleConfirm();
-        };
+        const handleKeyDown = (e) => { if (e.key === 'Escape') onClose(); if (e.key === 'Enter') handleConfirm(); };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, selected]);
-
     const filteredOptions = options.filter(opt => String(opt).toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 100);
-
-    const toggleSelection = (val) => {
-        const newSet = new Set(selected);
-        if (newSet.has(val)) newSet.delete(val); else newSet.add(val);
-        setSelected(newSet);
-    };
-
-    const handleConfirm = () => {
-        const valueString = Array.from(selected).join(', ');
-        onSave(valueString);
-        onClose();
-    };
-
+    const toggleSelection = (val) => { const newSet = new Set(selected); if (newSet.has(val)) newSet.delete(val); else newSet.add(val); setSelected(newSet); };
+    const handleConfirm = () => { const valueString = Array.from(selected).join(', '); onSave(valueString); onClose(); };
     if (!isOpen) return null;
-
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white w-full max-w-md rounded-xl shadow-2xl flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
                 <div className="p-4 border-b border-slate-100 flex justify-between items-center">
                     <h3 className="font-bold text-blue-900">{title}</h3>
-                    <div className="flex gap-2">
-                        <button onClick={handleConfirm} className="px-3 py-1 bg-blue-900 text-white text-xs rounded hover:bg-blue-800">Xác nhận (Enter)</button>
-                        <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full" title="Esc"><X size={20}/></button>
-                    </div>
+                    <div className="flex gap-2"><button onClick={handleConfirm} className="px-3 py-1 bg-blue-900 text-white text-xs rounded hover:bg-blue-800">Xác nhận (Enter)</button><button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full" title="Esc"><X size={20}/></button></div>
                 </div>
-                
                 <div className="p-3 bg-slate-50 border-b border-slate-100">
-                    <div className="relative">
-                        <Search size={16} className="absolute left-3 top-2.5 text-slate-400"/>
-                        <input ref={inputRef} type="text" className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Tìm kiếm..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                    </div>
-                    <div className="flex justify-between mt-2 text-xs text-slate-500">
-                        <span>Đã chọn: {selected.size}</span>
-                        <button onClick={() => setSelected(new Set())} className="text-red-500 hover:underline">Bỏ chọn hết</button>
-                    </div>
+                    <div className="relative"><Search size={16} className="absolute left-3 top-2.5 text-slate-400"/><input ref={inputRef} type="text" className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Tìm kiếm..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+                    <div className="flex justify-between mt-2 text-xs text-slate-500"><span>Đã chọn: {selected.size}</span><button onClick={() => setSelected(new Set())} className="text-red-500 hover:underline">Bỏ chọn hết</button></div>
                 </div>
-                <div className="flex-1 overflow-y-auto p-2">
-                    {filteredOptions.length > 0 ? (
-                        <div className="grid grid-cols-1 gap-1">
-                            {filteredOptions.map((opt, idx) => (
-                                <div key={idx} onClick={() => toggleSelection(opt)} className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm cursor-pointer transition-colors ${selected.has(opt) ? 'bg-blue-50 text-blue-900 font-medium' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                    {selected.has(opt) ? <CheckSquare size={18} className="text-blue-600"/> : <Square size={18} className="text-slate-300"/>}
-                                    <span className="truncate">{opt}</span>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (<div className="p-8 text-center text-slate-400 text-sm">Không tìm thấy dữ liệu</div>)}
-                </div>
+                <div className="flex-1 overflow-y-auto p-2">{filteredOptions.length > 0 ? (<div className="grid grid-cols-1 gap-1">{filteredOptions.map((opt, idx) => (<div key={idx} onClick={() => toggleSelection(opt)} className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm cursor-pointer transition-colors ${selected.has(opt) ? 'bg-blue-50 text-blue-900 font-medium' : 'hover:bg-slate-50 text-slate-700'}`}>{selected.has(opt) ? <CheckSquare size={18} className="text-blue-600"/> : <Square size={18} className="text-slate-300"/>}<span className="truncate">{opt}</span></div>))}</div>) : (<div className="p-8 text-center text-slate-400 text-sm">Không tìm thấy dữ liệu</div>)}</div>
             </motion.div>
         </div>
     );
 };
 
-// --- COMPONENT: ADVANCED SORT MODAL ---
 const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => {
     const [localRules, setLocalRules] = useState(sortRules || []);
-
-    useEffect(() => {
-        if (isOpen) setLocalRules(sortRules || []);
-    }, [isOpen, sortRules]);
-
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (!isOpen) return;
-            if (e.key === 'Escape') onClose();
-            if (e.key === 'Enter') { onApply(localRules); onClose(); }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, localRules]);
-
+    useEffect(() => { if (isOpen) setLocalRules(sortRules || []); }, [isOpen, sortRules]);
+    useEffect(() => { const handleKeyDown = (e) => { if (!isOpen) return; if (e.key === 'Escape') onClose(); if (e.key === 'Enter') { onApply(localRules); onClose(); } }; window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown); }, [isOpen, localRules]);
     const addRule = () => setLocalRules([...localRules, { column: columns[0], direction: 'asc' }]);
     const removeRule = (idx) => setLocalRules(localRules.filter((_, i) => i !== idx));
-    const updateRule = (idx, field, val) => {
-        const newRules = [...localRules];
-        newRules[idx][field] = val;
-        setLocalRules(newRules);
-    };
-
+    const updateRule = (idx, field, val) => { const newRules = [...localRules]; newRules[idx][field] = val; setLocalRules(newRules); };
     if (!isOpen) return null;
-
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white w-full max-w-lg rounded-xl shadow-2xl flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
                 <div className="p-4 border-b border-slate-100 flex justify-between items-center">
                     <h3 className="font-bold text-blue-900 flex items-center gap-2"><ListFilter size={18}/> Sắp xếp nâng cao</h3>
-                    <div className="flex gap-2">
-                        <button onClick={() => { onApply(localRules); onClose(); }} className="px-3 py-1 bg-blue-900 text-white text-xs rounded hover:bg-blue-800">Áp dụng (Enter)</button>
-                        <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full" title="Esc"><X size={20}/></button>
-                    </div>
+                    <div className="flex gap-2"><button onClick={() => { onApply(localRules); onClose(); }} className="px-3 py-1 bg-blue-900 text-white text-xs rounded hover:bg-blue-800">Áp dụng (Enter)</button><button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full" title="Esc"><X size={20}/></button></div>
                 </div>
-                <div className="p-4 overflow-y-auto flex-1">
-                    {localRules.length === 0 ? (
-                        <div className="text-center text-slate-400 py-8">Chưa có điều kiện sắp xếp nào.</div>
-                    ) : (
-                        <div className="space-y-3">
-                            {localRules.map((rule, idx) => (
-                                <div key={idx} className="flex gap-2 items-center bg-slate-50 p-2 rounded border border-slate-200">
-                                    <span className="text-xs font-bold text-slate-500 w-16">{idx === 0 ? 'Sắp xếp' : 'Rồi theo'}</span>
-                                    <select className="flex-1 text-sm border border-slate-300 rounded p-1.5" value={rule.column} onChange={(e) => updateRule(idx, 'column', e.target.value)}>
-                                        {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                    <select className="w-28 text-sm border border-slate-300 rounded p-1.5" value={rule.direction} onChange={(e) => updateRule(idx, 'direction', e.target.value)}>
-                                        <option value="asc">Tăng dần (A-Z)</option>
-                                        <option value="desc">Giảm dần (Z-A)</option>
-                                    </select>
-                                    <button onClick={() => removeRule(idx)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={16}/></button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                    <button onClick={addRule} className="mt-4 flex items-center gap-1 text-xs font-bold text-blue-700 hover:bg-blue-50 px-3 py-2 rounded transition-colors"><Plus size={14}/> Thêm mức sắp xếp</button>
-                </div>
+                <div className="p-4 overflow-y-auto flex-1">{localRules.length === 0 ? (<div className="text-center text-slate-400 py-8">Chưa có điều kiện sắp xếp nào.</div>) : (<div className="space-y-3">{localRules.map((rule, idx) => (<div key={idx} className="flex gap-2 items-center bg-slate-50 p-2 rounded border border-slate-200"><span className="text-xs font-bold text-slate-500 w-16">{idx === 0 ? 'Sắp xếp' : 'Rồi theo'}</span><select className="flex-1 text-sm border border-slate-300 rounded p-1.5" value={rule.column} onChange={(e) => updateRule(idx, 'column', e.target.value)}>{columns.map(c => <option key={c} value={c}>{c}</option>)}</select><select className="w-28 text-sm border border-slate-300 rounded p-1.5" value={rule.direction} onChange={(e) => updateRule(idx, 'direction', e.target.value)}><option value="asc">Tăng dần (A-Z)</option><option value="desc">Giảm dần (Z-A)</option></select><button onClick={() => removeRule(idx)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={16}/></button></div>))}</div>)}<button onClick={addRule} className="mt-4 flex items-center gap-1 text-xs font-bold text-blue-700 hover:bg-blue-50 px-3 py-2 rounded transition-colors"><Plus size={14}/> Thêm mức sắp xếp</button></div>
             </motion.div>
         </div>
     );
@@ -259,7 +174,8 @@ const LoginScreen = ({ onLoginSuccess }) => {
       setLoading(false);
     },
     onError: (error) => { console.error("Login Failed:", error); alert("Đăng nhập thất bại."); },
-    scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
+    // THAY ĐỔI: Chuyển sang scope toàn quyền để có thể GHI vào sheet config
+    scope: "https://www.googleapis.com/auth/spreadsheets", 
   });
 
   return (
@@ -284,11 +200,7 @@ const SetupScreen = ({ onConfig }) => {
   const [range, setRange] = useState(localStorage.getItem('last_sheet_range') || 'Sheet1!A:Z');
   const [history, setHistory] = useState([]);
 
-  useEffect(() => {
-      const savedHistory = JSON.parse(localStorage.getItem('sheet_history') || '[]');
-      setHistory(savedHistory);
-  }, []);
-
+  useEffect(() => { const savedHistory = JSON.parse(localStorage.getItem('sheet_history') || '[]'); setHistory(savedHistory); }, []);
   const handleSubmit = (e) => {
     e.preventDefault();
     const newHistory = [{ id: sheetId, range: range, date: new Date().toLocaleDateString('vi-VN') }, ...history.filter(h => h.id !== sheetId)].slice(0, 5);
@@ -297,14 +209,8 @@ const SetupScreen = ({ onConfig }) => {
     localStorage.setItem('last_sheet_range', range);
     onConfig(sheetId, range);
   };
-
   const useHistoryItem = (item) => { setSheetId(item.id); setRange(item.range); };
-  const deleteHistoryItem = (e, idToDelete) => {
-      e.stopPropagation();
-      const newHistory = history.filter(h => h.id !== idToDelete);
-      setHistory(newHistory);
-      localStorage.setItem('sheet_history', JSON.stringify(newHistory));
-  };
+  const deleteHistoryItem = (e, idToDelete) => { e.stopPropagation(); const newHistory = history.filter(h => h.id !== idToDelete); setHistory(newHistory); localStorage.setItem('sheet_history', JSON.stringify(newHistory)); };
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
@@ -326,39 +232,29 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [allColumns, setAllColumns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  
+  // State cho việc lưu cấu hình Cloud
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [configStatus, setConfigStatus] = useState(null); // 'saved', 'error', 'loading'
 
-  // --- NEW STATES ---
   const [bulkFilterMode, setBulkFilterMode] = useState('exact'); 
   const [activeSuggestionFilter, setActiveSuggestionFilter] = useState(null);
-
   const [sortRules, setSortRules] = useState([]); 
   const [isSortModalOpen, setIsSortModalOpen] = useState(false);
-
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
-
   const [isQueryBuilderOpen, setIsQueryBuilderOpen] = useState(true);
   const [colSearchTerm, setColSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
 
-  // NÂNG CẤP: Chuyển state Charts lên Dashboard để không bị reset khi đổi tab
-  const [charts, setCharts] = useState(() => {
-      const saved = localStorage.getItem('pka_dashboard_charts');
-      return saved ? JSON.parse(saved) : [];
+  // THAY ĐỔI: Không đọc từ localStorage nữa
+  const [charts, setCharts] = useState([]);
+  const [queryConfig, setQueryConfig] = useState({
+      selectedCols: [],
+      bulkFilter: { column: '', values: '' },
+      filters: [{ id: 1, column: '', condition: 'contains', value: '', operator: 'AND' }]
   });
-  useEffect(() => localStorage.setItem('pka_dashboard_charts', JSON.stringify(charts)), [charts]);
-
-  const [queryConfig, setQueryConfig] = useState(() => {
-      const saved = localStorage.getItem('pka_query_config');
-      return saved ? JSON.parse(saved) : {
-        selectedCols: [],
-        bulkFilter: { column: '', values: '' },
-        filters: [{ id: 1, column: '', condition: 'contains', value: '', operator: 'AND' }]
-      };
-  });
-
-  useEffect(() => { localStorage.setItem('pka_query_config', JSON.stringify(queryConfig)); }, [queryConfig]);
 
   const [resultState, setResultState] = useState({ data: [], visibleCols: [], isExecuted: false });
   const [selection, setSelection] = useState({ start: { row: null, col: null }, end: { row: null, col: null }, isDragging: false });
@@ -368,31 +264,98 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const tableRef = useRef(null);
   const resizingRef = useRef(null);
 
-  // NÂNG CẤP: Logic Reset bộ lọc thông minh (Tìm cột Mã, Họ tên...)
+  // --- LOGIC LƯU TRỮ CẤU HÌNH LÊN SHEET ---
+  const saveConfigToSheet = async () => {
+    setIsSavingConfig(true);
+    setConfigStatus('loading');
+    try {
+        const configData = {
+            version: "1.0",
+            timestamp: new Date().toISOString(),
+            charts: charts,
+            queryConfig: queryConfig
+        };
+        const jsonString = JSON.stringify(configData);
+
+        // 1. Kiểm tra xem sheet config đã tồn tại chưa
+        const spreadsheetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}`;
+        const headers = { Authorization: `Bearer ${user.accessToken}` };
+        
+        let sheetExists = false;
+        try {
+            const metaRes = await axios.get(spreadsheetUrl, { headers });
+            sheetExists = metaRes.data.sheets.some(s => s.properties.title === CONFIG_SHEET_NAME);
+        } catch (e) {
+             throw new Error("Không thể kiểm tra danh sách Sheet.");
+        }
+
+        // 2. Nếu chưa có, tạo mới và ẩn đi
+        if (!sheetExists) {
+            await axios.post(`${spreadsheetUrl}:batchUpdate`, {
+                requests: [{
+                    addSheet: {
+                        properties: { title: CONFIG_SHEET_NAME, hidden: true, gridProperties: { rowCount: 1, columnCount: 1 } }
+                    }
+                }]
+            }, { headers });
+        }
+
+        // 3. Ghi dữ liệu vào ô A1
+        const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${CONFIG_SHEET_NAME}!A1?valueInputOption=RAW`;
+        await axios.put(updateUrl, { values: [[jsonString]] }, { headers });
+
+        setConfigStatus('saved');
+        setTimeout(() => setConfigStatus(null), 3000);
+    } catch (error) {
+        console.error("Lỗi lưu cấu hình:", error);
+        setConfigStatus('error');
+        alert("Lỗi lưu cấu hình! Hãy đảm bảo bạn có quyền Chỉnh sửa (Edit) file Sheet này, không phải chỉ Xem.");
+    }
+    setIsSavingConfig(false);
+  };
+
+  const loadConfigFromSheet = useCallback(async (headers = []) => {
+      try {
+          const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${CONFIG_SHEET_NAME}!A1?key=${API_KEY}`;
+          const response = await axios.get(url, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+          if (response.data.values && response.data.values[0]) {
+              const jsonString = response.data.values[0][0];
+              const parsed = JSON.parse(jsonString);
+              if (parsed.charts) setCharts(parsed.charts);
+              if (parsed.queryConfig) setQueryConfig(parsed.queryConfig);
+              console.log("Đã tải cấu hình từ Cloud:", parsed);
+              return true;
+          }
+      } catch (error) {
+          // 404 hoặc 400 nghĩa là chưa có sheet config -> dùng mặc định
+          console.warn("Chưa có bản lưu cấu hình hoặc không đọc được.", error);
+          // Logic mặc định nếu chưa có config
+          if (headers.length > 0) {
+            const findCol = (keywords) => headers.find(c => keywords.some(k => c.toLowerCase().includes(k)));
+            const defaultCols = [findCol(['mã', 'mssv']), findCol(['họ tên', 'tên']), findCol(['khoá', 'khóa']), findCol(['khoa'])].filter(Boolean);
+            setQueryConfig(prev => ({ ...prev, selectedCols: defaultCols.length > 0 ? defaultCols : headers.slice(0, 5) }));
+          }
+      }
+      return false;
+  }, [config.id, user.accessToken]);
+
   const resetFilters = () => {
       const findCol = (keywords) => allColumns.find(c => keywords.some(k => c.toLowerCase().includes(k)));
-      
       const defaultCols = [
           findCol(['mã', 'mssv', 'code']), 
           findCol(['họ tên', 'tên', 'name']), 
           findCol(['khoá', 'khóa', 'course']), 
           findCol(['khoa', 'department'])
       ].filter(Boolean);
-
       const defaultFilterCol = findCol(['mã', 'mssv', 'code']) || '';
-
       setQueryConfig({
           selectedCols: defaultCols.length > 0 ? defaultCols : allColumns.slice(0, 5),
           bulkFilter: { column: defaultFilterCol, values: '' },
           filters: [{ id: Date.now(), column: defaultFilterCol, condition: 'contains', value: '', operator: 'AND' }]
       });
-      // Không alert để trải nghiệm mượt hơn
   };
 
-  // NÂNG CẤP: Logic Update biểu đồ từ con (ChartCard)
-  const updateChart = (id, newConfig) => {
-      setCharts(prev => prev.map(c => c.id === id ? { ...c, ...newConfig } : c));
-  };
+  const updateChart = (id, newConfig) => { setCharts(prev => prev.map(c => c.id === id ? { ...c, ...newConfig } : c)); };
 
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true); setLoadError(null);
@@ -412,45 +375,27 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         });
         setRawData(formattedData); setAllColumns(headers); 
         
-        setQueryConfig(prev => { 
-            if (prev.selectedCols.length === 0) {
-                const findCol = (keywords) => headers.find(c => keywords.some(k => c.toLowerCase().includes(k)));
-                const defaultCols = [findCol(['mã', 'mssv']), findCol(['họ tên', 'tên']), findCol(['khoá', 'khóa']), findCol(['khoa'])].filter(Boolean);
-                return { ...prev, selectedCols: defaultCols.length > 0 ? defaultCols : headers.slice(0, 5) }; 
-            }
-            return prev; 
-        });
         const initWidths = {}; headers.forEach(h => initWidths[h] = 150); setColumnWidths(initWidths);
+
+        // SAU KHI TẢI DATA -> TẢI CẤU HÌNH TỪ SHEET
+        await loadConfigFromSheet(headers);
 
     } catch (error) {
         console.error("Lỗi tải Sheet:", error);
-        setLoadError(error.response?.status === 403 ? "Bạn không có quyền truy cập file này (Lỗi 403)." : "Lỗi kết nối! Kiểm tra lại ID Sheet hoặc Mạng.");
+        setLoadError(error.response?.status === 403 ? "Bạn không có quyền truy cập file này (Lỗi 403). Hãy kiểm tra lại ID." : "Lỗi kết nối! Kiểm tra lại ID Sheet hoặc Mạng.");
     }
     setLoading(false);
-  }, [config, user.accessToken]);
+  }, [config, user.accessToken, loadConfigFromSheet]);
 
   useEffect(() => { fetchGoogleSheetData(); }, [fetchGoogleSheetData]);
 
-  useEffect(() => {
-      const handleShortcut = (e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runQuery();
-      };
-      window.addEventListener('keydown', handleShortcut);
-      return () => window.removeEventListener('keydown', handleShortcut);
-  });
+  useEffect(() => { const handleShortcut = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runQuery(); }; window.addEventListener('keydown', handleShortcut); return () => window.removeEventListener('keydown', handleShortcut); });
 
   const openColumnModal = (type, id = null) => { setModalTarget({ type, id }); setIsModalOpen(true); };
-  const handleColumnSelect = (colName) => {
-      if (modalTarget.type === 'bulk') setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, column: colName } }));
-      else if (modalTarget.type === 'filter') updateFilter(modalTarget.id, 'column', colName);
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e) => { if (resizingRef.current) { const { col, startX, startWidth } = resizingRef.current; setColumnWidths(prev => ({ ...prev, [col]: Math.max(50, startWidth + (e.clientX - startX)) })); }};
-    const handleMouseUp = () => { resizingRef.current = null; document.body.style.cursor = 'default'; };
-    document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
-    return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-  }, []);
+  const handleColumnSelect = (colName) => { if (modalTarget.type === 'bulk') setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, column: colName } })); else if (modalTarget.type === 'filter') updateFilter(modalTarget.id, 'column', colName); };
+  
+  // Resizing logic...
+  useEffect(() => { const mm = (e) => { if (resizingRef.current) { const { col, startX, startWidth } = resizingRef.current; setColumnWidths(prev => ({ ...prev, [col]: Math.max(50, startWidth + (e.clientX - startX)) })); }}; const mu = () => { resizingRef.current = null; document.body.style.cursor = 'default'; }; document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu); return () => { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); }; }, []);
   const startResizing = (e, col) => { e.preventDefault(); e.stopPropagation(); resizingRef.current = { col, startX: e.clientX, startWidth: columnWidths[col] || 150 }; document.body.style.cursor = 'col-resize'; };
   const handleDragStart = (e, ci) => e.dataTransfer.setData("colIndex", ci);
   const handleDrop = (e, ti) => { const si = parseInt(e.dataTransfer.getData("colIndex")); if (si === ti) return; const nc = [...resultState.visibleCols]; const [mc] = nc.splice(si, 1); nc.splice(ti, 0, mc); setResultState(p => ({ ...p, visibleCols: nc })); };
@@ -458,78 +403,31 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const addFilterCondition = () => setQueryConfig(prev => ({ ...prev, filters: [...prev.filters, { id: Date.now(), column: '', condition: 'contains', value: '', operator: 'AND' }] }));
   const removeFilterCondition = (id) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.filter(f => f.id !== id) }));
   const updateFilter = (id, field, value) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.map(f => f.id === id ? { ...f, [field]: value } : f) }));
-  
   const openSuggestionModal = (filterId) => { setActiveSuggestionFilter(filterId); };
-  const handleSuggestionSave = (value) => {
-      if (activeSuggestionFilter) { updateFilter(activeSuggestionFilter, 'value', value); setActiveSuggestionFilter(null); }
-  };
-
-  const checkCondition = (row, filter) => {
-      if (!filter.column || !filter.value) return true; 
-      const cellVal = String(row[filter.column] || '').toLowerCase();
-      const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
-      
-      return searchVals.some(searchVal => {
-          switch (filter.condition) {
-              case 'contains': return cellVal.includes(searchVal);
-              case 'not_contains': return !cellVal.includes(searchVal);
-              case 'equals': return cellVal === searchVal;
-              case 'not_equals': return cellVal !== searchVal;
-              case 'starts': return cellVal.startsWith(searchVal);
-              case 'greater': return parseFloat(cellVal) >= parseFloat(searchVal);
-              case 'less': return parseFloat(cellVal) <= parseFloat(searchVal);
-              default: return true;
-          }
-      });
-  };
+  const handleSuggestionSave = (value) => { if (activeSuggestionFilter) { updateFilter(activeSuggestionFilter, 'value', value); setActiveSuggestionFilter(null); } };
+  const checkCondition = (row, filter) => { if (!filter.column || !filter.value) return true; const cellVal = String(row[filter.column] || '').toLowerCase(); const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s); return searchVals.some(searchVal => { switch (filter.condition) { case 'contains': return cellVal.includes(searchVal); case 'not_contains': return !cellVal.includes(searchVal); case 'equals': return cellVal === searchVal; case 'not_equals': return cellVal !== searchVal; case 'starts': return cellVal.startsWith(searchVal); case 'greater': return parseFloat(cellVal) >= parseFloat(searchVal); case 'less': return parseFloat(cellVal) <= parseFloat(searchVal); default: return true; } }); };
 
   const runQuery = () => {
     setHistory(prev => ({ past: [...prev.past, { config: { ...queryConfig }, result: { ...resultState } }], future: [] }));
     let filtered = [...rawData];
     let orderedData = [];
-
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,;]+/); 
       const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim().toLowerCase()).filter(s => s !== ''))];
-      
       if (uniquePasteOrder.length > 0) {
           const rowMap = new Map();
-          filtered.forEach(row => {
-              const cellVal = String(row[targetCol]).trim().toLowerCase();
-              if (bulkFilterMode === 'exact') {
-                  if (uniquePasteOrder.includes(cellVal)) { if (!rowMap.has(cellVal)) rowMap.set(cellVal, []); rowMap.get(cellVal).push(row); }
-              } else {
-                  const matchedKey = uniquePasteOrder.find(k => cellVal.includes(k));
-                  if (matchedKey) { if (!rowMap.has(matchedKey)) rowMap.set(matchedKey, []); rowMap.get(matchedKey).push(row); }
-              }
-          });
+          filtered.forEach(row => { const cellVal = String(row[targetCol]).trim().toLowerCase(); if (bulkFilterMode === 'exact') { if (uniquePasteOrder.includes(cellVal)) { if (!rowMap.has(cellVal)) rowMap.set(cellVal, []); rowMap.get(cellVal).push(row); } } else { const matchedKey = uniquePasteOrder.find(k => cellVal.includes(k)); if (matchedKey) { if (!rowMap.has(matchedKey)) rowMap.set(matchedKey, []); rowMap.get(matchedKey).push(row); } } });
           uniquePasteOrder.forEach(val => { if (rowMap.has(val)) orderedData.push(...rowMap.get(val)); });
           filtered = orderedData;
       }
     }
-
-    filtered = filtered.filter(row => {
-        let result = true; 
-        queryConfig.filters.forEach((filter, index) => {
-            const isMatch = checkCondition(row, filter);
-            if (index === 0) result = isMatch;
-            else if (filter.operator === 'AND') result = result && isMatch;
-            else if (filter.operator === 'OR') result = result || isMatch;
-        });
-        return result;
-    });
-
+    filtered = filtered.filter(row => { let result = true; queryConfig.filters.forEach((filter, index) => { const isMatch = checkCondition(row, filter); if (index === 0) result = isMatch; else if (filter.operator === 'AND') result = result && isMatch; else if (filter.operator === 'OR') result = result || isMatch; }); return result; });
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
-    setCurrentPage(1); setSortRules([]); 
-    setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
+    setCurrentPage(1); setSortRules([]); setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
 
-  const getColumnOptions = useCallback((colName) => {
-      if (!colName || !rawData.length) return [];
-      return [...new Set(rawData.map(r => r[colName]))].sort().filter(v => v);
-  }, [rawData]);
-
+  const getColumnOptions = useCallback((colName) => { if (!colName || !rawData.length) return []; return [...new Set(rawData.map(r => r[colName]))].sort().filter(v => v); }, [rawData]);
   const handleUndo = () => { if (history.past.length === 0) return; const prev = history.past[history.past.length - 1]; setHistory({ past: history.past.slice(0, -1), future: [{ config: { ...queryConfig }, result: { ...resultState } }, ...history.future] }); setQueryConfig(prev.config); setResultState(prev.result); };
   const handleRedo = () => { if (history.future.length === 0) return; const next = history.future[0]; setHistory({ past: [...history.past, { config: { ...queryConfig }, result: { ...resultState } }], future: history.future.slice(1) }); setQueryConfig(next.config); setResultState(next.result); };
   const handleMouseDown = (r, c) => setSelection({ start: { row: r, col: c }, end: { row: r, col: c }, isDragging: true });
@@ -542,37 +440,11 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
 
-  const handleQuickSort = (key) => {
-      if (sortRules.length > 0 && sortRules[0].column === key) {
-          const newDir = sortRules[0].direction === 'asc' ? 'desc' : 'asc';
-          setSortRules([{ column: key, direction: newDir }]); 
-      } else {
-          setSortRules([{ column: key, direction: 'asc' }]);
-      }
-  };
-
-  const sortedData = useMemo(() => {
-      if (!sortRules || sortRules.length === 0) return resultState.data;
-      let data = [...resultState.data];
-      data.sort((a, b) => {
-          for (const rule of sortRules) {
-              const aVal = String(a[rule.column] || '');
-              const bVal = String(b[rule.column] || '');
-              let comparison = 0;
-              const aNum = parseFloat(aVal);
-              const bNum = parseFloat(bVal);
-              if (!isNaN(aNum) && !isNaN(bNum)) { comparison = aNum - bNum; } else { comparison = aVal.localeCompare(bVal, 'vi'); }
-              if (comparison !== 0) { return rule.direction === 'asc' ? comparison : -comparison; }
-          }
-          return 0;
-      });
-      return data;
-  }, [resultState.data, sortRules]);
-
+  const handleQuickSort = (key) => { if (sortRules.length > 0 && sortRules[0].column === key) { const newDir = sortRules[0].direction === 'asc' ? 'desc' : 'asc'; setSortRules([{ column: key, direction: newDir }]); } else { setSortRules([{ column: key, direction: 'asc' }]); } };
+  const sortedData = useMemo(() => { if (!sortRules || sortRules.length === 0) return resultState.data; let data = [...resultState.data]; data.sort((a, b) => { for (const rule of sortRules) { const aVal = String(a[rule.column] || ''); const bVal = String(b[rule.column] || ''); let comparison = 0; const aNum = parseFloat(aVal); const bNum = parseFloat(bVal); if (!isNaN(aNum) && !isNaN(bNum)) { comparison = aNum - bNum; } else { comparison = aVal.localeCompare(bVal, 'vi'); } if (comparison !== 0) { return rule.direction === 'asc' ? comparison : -comparison; } } return 0; }); return data; }, [resultState.data, sortRules]);
   const currentTableData = useMemo(() => { if (itemsPerPage === 'all') return sortedData; const start = (currentPage - 1) * itemsPerPage; return sortedData.slice(start, start + itemsPerPage); }, [sortedData, currentPage, itemsPerPage]);
   const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(sortedData.length / itemsPerPage);
   const handleItemsPerPageChange = (val) => { setItemsPerPage(val === 'all' ? 'all' : Number(val)); setCurrentPage(1); };
-
   const activeFilterObj = queryConfig.filters.find(f => f.id === activeSuggestionFilter);
   const suggestionOptions = activeFilterObj ? getColumnOptions(activeFilterObj.column) : [];
   const suggestionInitialValue = activeFilterObj ? activeFilterObj.value : "";
@@ -582,16 +454,21 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
         <div className="flex items-center gap-3"><div className="bg-blue-900 text-white p-2 rounded hidden md:block"><LayoutTemplate size={20} /></div><div><h1 className="font-bold text-blue-900 leading-tight text-sm md:text-base">PKA MANAGEMENT</h1><p className="text-xs text-slate-500 hidden md:block">Hệ thống Tra cứu & Phân tích dữ liệu</p></div></div>
         <div className="flex items-center gap-2 md:gap-4">
+            {/* Nút lưu cấu hình */}
+            <button onClick={saveConfigToSheet} disabled={isSavingConfig} className={`flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded border transition-colors ${configStatus === 'saved' ? 'bg-green-100 text-green-800 border-green-200' : (configStatus === 'error' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50')}`}>
+                {isSavingConfig ? <RefreshCw className="animate-spin w-3.5 h-3.5"/> : (configStatus === 'saved' ? <CheckCircle2 size={14}/> : <CloudUpload size={14}/>)}
+                <span className="hidden md:inline">{isSavingConfig ? 'Đang lưu...' : (configStatus === 'saved' ? 'Đã lưu Cloud' : 'Lưu cấu hình')}</span>
+            </button>
             <button onClick={onChangeSource} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200 transition-colors"><Database size={14} /> <span className="hidden md:inline">Đổi nguồn</span></button>
             <button onClick={() => fetchGoogleSheetData()} className="p-2 text-blue-700 bg-blue-50 rounded hover:bg-blue-100" title="Tải lại"><RefreshCw size={18} /></button>
             <div className="hidden md:flex items-center gap-2 bg-slate-50 rounded p-1"><button onClick={handleUndo} disabled={history.past.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Undo size={18} /></button><button onClick={handleRedo} disabled={history.future.length === 0} className="p-2 text-slate-600 disabled:opacity-30"><Redo size={18} /></button></div>
             <div className="flex items-center gap-2">{user.imageUrl && <img src={user.imageUrl} alt="Avatar" className="w-8 h-8 rounded-full" />}<button onClick={onLogout} className="text-slate-400 hover:text-red-500 ml-2" title="Đăng xuất"><LogOut size={18} /></button></div>
         </div>
       </header>
-
+      
+      {/* ... Phần Main UI giữ nguyên như cũ, chỉ thay đổi phần xử lý dữ liệu ở trên ... */}
       <main className="flex-1 p-3 md:p-6 overflow-hidden flex flex-col gap-4 md:gap-6">
         {loadError && (<div className="bg-red-50 text-red-700 p-4 rounded-lg border border-red-200 flex items-center justify-between"><span>{loadError}</span><button onClick={() => setLoadError(null)}><X size={18}/></button></div>)}
-
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-5 flex flex-col gap-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2 cursor-pointer" onClick={() => setIsQueryBuilderOpen(!isQueryBuilderOpen)}>
                  <h2 className="text-base md:text-lg font-bold text-blue-900 flex items-center gap-2">
@@ -601,60 +478,28 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                  </h2>
                  <div className="flex items-center gap-2"><span className="text-xs text-slate-500 hidden md:inline">{loading ? 'Đang tải...' : `Source: ${rawData.length} dòng`}</span>{isQueryBuilderOpen ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}</div>
             </div>
-
             <AnimatePresence>
             {isQueryBuilderOpen && (
                 <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden">
                     <div className="lg:col-span-3 border-r border-slate-100 lg:pr-4 flex flex-col gap-2">
                         <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><List size={16} /> 1. Chọn cột hiển thị</label>
-                        <div className="relative">
-                            <Search size={14} className="absolute left-2 top-2 text-slate-400"/>
-                            <input type="text" placeholder="Tìm tên cột..." className="w-full pl-8 pr-8 py-1 text-xs border border-slate-200 rounded focus:border-blue-500 outline-none" value={colSearchTerm} onChange={(e) => setColSearchTerm(e.target.value)} />
-                            {colSearchTerm && <button onClick={() => setColSearchTerm('')} className="absolute right-2 top-1.5 text-slate-400 hover:text-red-500"><X size={14}/></button>}
-                        </div>
+                        <div className="relative"><Search size={14} className="absolute left-2 top-2 text-slate-400"/><input type="text" placeholder="Tìm tên cột..." className="w-full pl-8 pr-8 py-1 text-xs border border-slate-200 rounded focus:border-blue-500 outline-none" value={colSearchTerm} onChange={(e) => setColSearchTerm(e.target.value)} />{colSearchTerm && <button onClick={() => setColSearchTerm('')} className="absolute right-2 top-1.5 text-slate-400 hover:text-red-500"><X size={14}/></button>}</div>
                         <div className="flex gap-2 text-xs mb-1"><button onClick={() => setQueryConfig(p => ({...p, selectedCols: allColumns}))} className="text-blue-700 hover:underline">All</button><button onClick={() => setQueryConfig(p => ({...p, selectedCols: []}))} className="text-slate-500 hover:underline">None</button></div>
                         <div className="flex-1 overflow-y-auto max-h-[40vh] md:max-h-[50vh] border border-slate-200 rounded p-2 bg-slate-50 grid grid-cols-2 gap-x-2 gap-y-1 content-start">{filteredColumns.map(col => (<label key={col} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-white p-1 rounded transition-colors" title={col}><input type="checkbox" checked={queryConfig.selectedCols.includes(col)} onChange={() => setQueryConfig(p => ({...p, selectedCols: p.selectedCols.includes(col) ? p.selectedCols.filter(c => c !== col) : [...p.selectedCols, col]}))} className="rounded text-blue-900 focus:ring-blue-900 shrink-0" /><span className="truncate">{col}</span></label>))}</div>
                     </div>
-
                     <div className="lg:col-span-6 flex flex-col gap-4 lg:px-2">
                         <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><Settings size={16} /> 2. Thiết lập điều kiện</label>
                         <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                            <div className="flex justify-between mb-2">
-                                <span className="text-xs font-semibold uppercase text-slate-500">Lọc theo danh sách (Paste Excel)</span>
-                                <div className="flex gap-2 text-xs">
-                                    <label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="bulkMode" checked={bulkFilterMode === 'exact'} onChange={() => setBulkFilterMode('exact')} /> Chính xác</label>
-                                    <label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="bulkMode" checked={bulkFilterMode === 'partial'} onChange={() => setBulkFilterMode('partial')} /> Gần đúng</label>
-                                </div>
-                            </div>
-                            <div className="flex flex-col md:flex-row gap-2 relative">
-                                <div onClick={() => openColumnModal('bulk')} className="w-full md:w-1/3 border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer hover:border-blue-500 flex justify-between items-center"><span className={`truncate ${!queryConfig.bulkFilter.column ? 'text-slate-400' : 'text-slate-800'}`}>{queryConfig.bulkFilter.column || "Cột đối chiếu"}</span><ChevronDown size={14} className="text-slate-400"/></div>
-                                <div className="flex-1 relative"><textarea className="w-full h-full border border-slate-300 rounded px-3 py-2 pr-8 text-sm min-h-[40px] max-h-[80px] focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Paste danh sách mã SV, SĐT..." value={queryConfig.bulkFilter.values} onChange={(e) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, values: e.target.value } }))} />{queryConfig.bulkFilter.values && <button onClick={() => setQueryConfig(p => ({...p, bulkFilter: {...p.bulkFilter, values: ''}}))} className="absolute right-2 top-2 text-slate-400 hover:text-red-500 bg-white rounded-full"><X size={14}/></button>}</div>
-                            </div>
+                            <div className="flex justify-between mb-2"><span className="text-xs font-semibold uppercase text-slate-500">Lọc theo danh sách (Paste Excel)</span><div className="flex gap-2 text-xs"><label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="bulkMode" checked={bulkFilterMode === 'exact'} onChange={() => setBulkFilterMode('exact')} /> Chính xác</label><label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="bulkMode" checked={bulkFilterMode === 'partial'} onChange={() => setBulkFilterMode('partial')} /> Gần đúng</label></div></div>
+                            <div className="flex flex-col md:flex-row gap-2 relative"><div onClick={() => openColumnModal('bulk')} className="w-full md:w-1/3 border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer hover:border-blue-500 flex justify-between items-center"><span className={`truncate ${!queryConfig.bulkFilter.column ? 'text-slate-400' : 'text-slate-800'}`}>{queryConfig.bulkFilter.column || "Cột đối chiếu"}</span><ChevronDown size={14} className="text-slate-400"/></div><div className="flex-1 relative"><textarea className="w-full h-full border border-slate-300 rounded px-3 py-2 pr-8 text-sm min-h-[40px] max-h-[80px] focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Paste danh sách mã SV, SĐT..." value={queryConfig.bulkFilter.values} onChange={(e) => setQueryConfig(p => ({ ...p, bulkFilter: { ...p.bulkFilter, values: e.target.value } }))} />{queryConfig.bulkFilter.values && <button onClick={() => setQueryConfig(p => ({...p, bulkFilter: {...p.bulkFilter, values: ''}}))} className="absolute right-2 top-2 text-slate-400 hover:text-red-500 bg-white rounded-full"><X size={14}/></button>}</div></div>
                         </div>
                         <div className="flex flex-col gap-2">
                             <div className="flex justify-between items-center"><span className="text-xs font-semibold uppercase text-slate-500">Điều kiện chi tiết</span><button onClick={addFilterCondition} className="text-xs flex items-center gap-1 text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition-colors"><Plus size={14} /> Thêm điều kiện</button></div>
-                            <div className="max-h-48 overflow-y-auto pr-1 space-y-2">
-                                {queryConfig.filters.map((filter, idx) => (
-                                    <div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0">
-                                        <div className="flex items-center gap-1">{idx > 0 ? (<select className="border border-slate-300 bg-slate-100 rounded px-1 py-2 text-xs font-bold w-16" value={filter.operator} onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}><option value="AND">VÀ</option><option value="OR">HOẶC</option></select>) : <span className="text-slate-400 font-mono text-xs w-16 text-center">Bắt đầu</span>}</div>
-                                        <div onClick={() => openColumnModal('filter', filter.id)} className="flex-1 border border-slate-300 rounded px-3 py-2 cursor-pointer hover:border-blue-500 bg-white flex justify-between items-center"><span className={`truncate ${!filter.column ? 'text-slate-400' : 'text-slate-800'}`}>{filter.column || "(Chọn cột)"}</span><ChevronDown size={14} className="text-slate-400"/></div>
-                                        <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}><option value="contains">Chứa</option><option value="not_contains">Không chứa</option><option value="equals">Bằng tuyệt đối</option><option value="not_equals">Khác</option><option value="starts">Bắt đầu với</option><option value="greater">Lớn hơn</option><option value="less">Nhỏ hơn</option></select>
-                                        <div className="flex-1 w-full relative flex gap-1">
-                                            <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 pr-8" placeholder="Giá trị..." value={filter.value} onChange={(e) => updateFilter(filter.id, 'value', e.target.value)} />
-                                            {filter.value && <button onClick={() => updateFilter(filter.id, 'value', '')} className="absolute right-12 top-2.5 text-slate-400 hover:text-red-500"><X size={14}/></button>}
-                                            {filter.column && <button onClick={() => openSuggestionModal(filter.id)} className="p-2 border border-slate-300 rounded hover:bg-slate-50 text-blue-600"><List size={16}/></button>}
-                                        </div>
-                                        <button onClick={() => removeFilterCondition(filter.id)} className="text-red-400 hover:text-red-600 p-1 self-end md:self-center"><Trash2 size={16} /></button>
-                                    </div>
-                                ))}
-                            </div>
+                            <div className="max-h-48 overflow-y-auto pr-1 space-y-2">{queryConfig.filters.map((filter, idx) => (<div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0"><div className="flex items-center gap-1">{idx > 0 ? (<select className="border border-slate-300 bg-slate-100 rounded px-1 py-2 text-xs font-bold w-16" value={filter.operator} onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}><option value="AND">VÀ</option><option value="OR">HOẶC</option></select>) : <span className="text-slate-400 font-mono text-xs w-16 text-center">Bắt đầu</span>}</div><div onClick={() => openColumnModal('filter', filter.id)} className="flex-1 border border-slate-300 rounded px-3 py-2 cursor-pointer hover:border-blue-500 bg-white flex justify-between items-center"><span className={`truncate ${!filter.column ? 'text-slate-400' : 'text-slate-800'}`}>{filter.column || "(Chọn cột)"}</span><ChevronDown size={14} className="text-slate-400"/></div><select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}><option value="contains">Chứa</option><option value="not_contains">Không chứa</option><option value="equals">Bằng tuyệt đối</option><option value="not_equals">Khác</option><option value="starts">Bắt đầu với</option><option value="greater">Lớn hơn</option><option value="less">Nhỏ hơn</option></select><div className="flex-1 w-full relative flex gap-1"><input type="text" className="w-full border border-slate-300 rounded px-3 py-2 pr-8" placeholder="Giá trị..." value={filter.value} onChange={(e) => updateFilter(filter.id, 'value', e.target.value)} />{filter.value && <button onClick={() => updateFilter(filter.id, 'value', '')} className="absolute right-12 top-2.5 text-slate-400 hover:text-red-500"><X size={14}/></button>}{filter.column && <button onClick={() => openSuggestionModal(filter.id)} className="p-2 border border-slate-300 rounded hover:bg-slate-50 text-blue-600"><List size={16}/></button>}</div><button onClick={() => removeFilterCondition(filter.id)} className="text-red-400 hover:text-red-600 p-1 self-end md:self-center"><Trash2 size={16} /></button></div>))}</div>
                         </div>
                     </div>
-
                     <div className="lg:col-span-3 border-l border-slate-100 lg:pl-4 flex flex-col justify-end pb-1">
-                        <button onClick={runQuery} disabled={loading} className="w-full py-3 bg-blue-900 hover:bg-blue-800 disabled:bg-slate-300 text-white rounded-lg shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95">
-                            {loading ? <RefreshCw className="animate-spin" /> : <Play size={20} fill="currentColor" />} {loading ? 'ĐANG TẢI...' : 'CHẠY TRUY VẤN'} <span className="text-[10px] opacity-60 ml-1 font-normal hidden md:inline">(Cmd/Ctrl + Enter)</span>
-                        </button>
+                        <button onClick={runQuery} disabled={loading} className="w-full py-3 bg-blue-900 hover:bg-blue-800 disabled:bg-slate-300 text-white rounded-lg shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95">{loading ? <RefreshCw className="animate-spin" /> : <Play size={20} fill="currentColor" />} {loading ? 'ĐANG TẢI...' : 'CHẠY TRUY VẤN'} <span className="text-[10px] opacity-60 ml-1 font-normal hidden md:inline">(Cmd/Ctrl + Enter)</span></button>
                     </div>
                 </motion.div>
             )}
@@ -686,7 +531,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
             </div>
         </div>
       </main>
-      
       <ColumnSelectorModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} columns={allColumns} onSelect={handleColumnSelect} />
       <MultiValueSelectModal isOpen={!!activeSuggestionFilter} onClose={() => setActiveSuggestionFilter(null)} options={suggestionOptions} initialValue={suggestionInitialValue} onSave={handleSuggestionSave} title="Chọn giá trị từ cột" />
       <AdvancedSortModal isOpen={isSortModalOpen} onClose={() => setIsSortModalOpen(false)} columns={allColumns} sortRules={sortRules} onApply={setSortRules} />
@@ -694,95 +538,34 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   );
 };
 
-// --- CHART COMPONENTS (Nâng cấp Stack/Segment + Controlled) ---
+// --- CHART COMPONENTS (Giữ nguyên ChartCard và SuperAnalytics) ---
 const ChartCard = ({ config, data, onDelete, onUpdate }) => {
-    // Không dùng state nội bộ nữa, dùng props từ config
     const type = config.type || 'bar';
     const xAxis = config.x || '';
     const segmentBy = config.segmentBy || '';
-    
     const columns = Object.keys(data[0] || {});
-
-    // Helper update function
-    const updateConfig = (key, value) => {
-        onUpdate({ [key]: value });
-    };
-
-    // Logic xử lý dữ liệu phức tạp (Segment / Stack)
+    const updateConfig = (key, value) => { onUpdate({ [key]: value }); };
     const processed = useMemo(() => {
         const segments = segmentBy ? [...new Set(data.map(r => r[segmentBy] || 'N/A'))].sort() : ['count'];
         const grouped = data.reduce((acc, row) => {
             const xVal = row[xAxis] || 'N/A';
-            if (!acc[xVal]) {
-                acc[xVal] = { name: xVal };
-                segments.forEach(seg => acc[xVal][seg] = 0);
-            }
+            if (!acc[xVal]) { acc[xVal] = { name: xVal }; segments.forEach(seg => acc[xVal][seg] = 0); }
             const segKey = segmentBy ? (row[segmentBy] || 'N/A') : 'count';
             acc[xVal][segKey] += 1;
             return acc;
         }, {});
-
-        return {
-            data: Object.values(grouped).sort((a,b) => b.count - a.count).slice(0, 20),
-            keys: segments
-        };
+        return { data: Object.values(grouped).sort((a,b) => b.count - a.count).slice(0, 20), keys: segments };
     }, [data, xAxis, segmentBy]);
-
     const COLORS = ['#003366', '#FF8042', '#00C49F', '#FFBB28', '#FF4444', '#8884d8', '#82ca9d'];
-    
     const renderContent = () => {
         const Cmp = { bar: BarChart, line: LineChart, area: AreaChart, pie: PieChart }[type] || BarChart;
-        
-        if (type === 'pie') {
-             return (
-                <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie data={processed.data} dataKey={processed.keys[0]} nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{processed.data.map((e,i)=> <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie>
-                        <RechartsTooltip /><Legend />
-                    </PieChart>
-                </ResponsiveContainer>
-             );
-        }
-
-        return (
-            <ResponsiveContainer width="100%" height="100%">
-                <Cmp data={processed.data}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" height={60} tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end"/>
-                    <YAxis />
-                    <RechartsTooltip />
-                    <Legend />
-                    {processed.keys.map((key, idx) => {
-                        const color = COLORS[idx % COLORS.length];
-                        const props = { key, dataKey: key, fill: color, stroke: color, stackId: segmentBy ? 'a' : undefined, name: key === 'count' ? 'Số lượng' : key };
-                        if (type === 'bar') return <Bar {...props} />;
-                        if (type === 'line') return <Line type="monotone" {...props} strokeWidth={2} />;
-                        if (type === 'area') return <Area type="monotone" {...props} />;
-                        return <Bar {...props} />;
-                    })}
-                </Cmp>
-            </ResponsiveContainer>
-        );
+        if (type === 'pie') { return (<ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={processed.data} dataKey={processed.keys[0]} nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{processed.data.map((e,i)=> <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><RechartsTooltip /><Legend /></PieChart></ResponsiveContainer>); }
+        return (<ResponsiveContainer width="100%" height="100%"><Cmp data={processed.data}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" height={60} tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end"/><YAxis /><RechartsTooltip /><Legend />{processed.keys.map((key, idx) => { const color = COLORS[idx % COLORS.length]; const props = { key, dataKey: key, fill: color, stroke: color, stackId: segmentBy ? 'a' : undefined, name: key === 'count' ? 'Số lượng' : key }; if (type === 'bar') return <Bar {...props} />; if (type === 'line') return <Line type="monotone" {...props} strokeWidth={2} />; if (type === 'area') return <Area type="monotone" {...props} />; return <Bar {...props} />; })}</Cmp></ResponsiveContainer>);
     };
-
     return (
         <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-96 flex flex-col">
             <div className="flex flex-wrap justify-between items-center mb-4 border-b border-slate-100 pb-2 gap-2">
-                <div className="flex gap-2 items-center flex-1 overflow-x-auto">
-                    <select className="text-xs border rounded p-1 font-bold text-blue-900" value={type} onChange={e=>updateConfig('type', e.target.value)}><option value="bar">Cột</option><option value="line">Đường</option><option value="pie">Tròn</option><option value="area">Vùng</option></select>
-                    <span className="text-xs text-slate-400 whitespace-nowrap">Trục X:</span>
-                    <select className="text-xs border rounded p-1 max-w-[100px]" value={xAxis} onChange={e=>updateConfig('x', e.target.value)}>{columns.map(c=><option key={c} value={c}>{c}</option>)}</select>
-                    
-                    {type !== 'pie' && (
-                        <>
-                            <span className="text-xs text-slate-400 whitespace-nowrap flex items-center gap-1"><Split size={12}/> Chia theo:</span>
-                            <select className="text-xs border rounded p-1 max-w-[100px]" value={segmentBy} onChange={e=>updateConfig('segmentBy', e.target.value)}>
-                                <option value="">(Không)</option>
-                                {columns.map(c=><option key={c} value={c}>{c}</option>)}
-                            </select>
-                        </>
-                    )}
-                </div>
+                <div className="flex gap-2 items-center flex-1 overflow-x-auto"><select className="text-xs border rounded p-1 font-bold text-blue-900" value={type} onChange={e=>updateConfig('type', e.target.value)}><option value="bar">Cột</option><option value="line">Đường</option><option value="pie">Tròn</option><option value="area">Vùng</option></select><span className="text-xs text-slate-400 whitespace-nowrap">Trục X:</span><select className="text-xs border rounded p-1 max-w-[100px]" value={xAxis} onChange={e=>updateConfig('x', e.target.value)}>{columns.map(c=><option key={c} value={c}>{c}</option>)}</select>{type !== 'pie' && (<><span className="text-xs text-slate-400 whitespace-nowrap flex items-center gap-1"><Split size={12}/> Chia theo:</span><select className="text-xs border rounded p-1 max-w-[100px]" value={segmentBy} onChange={e=>updateConfig('segmentBy', e.target.value)}><option value="">(Không)</option>{columns.map(c=><option key={c} value={c}>{c}</option>)}</select></>)}</div>
                 <button onClick={onDelete} className="text-slate-300 hover:text-red-500"><X size={16}/></button>
             </div>
             <div className="flex-1 min-h-0 text-xs font-medium">{renderContent()}</div>
@@ -790,59 +573,21 @@ const ChartCard = ({ config, data, onDelete, onUpdate }) => {
     );
 };
 
-// --- SUPER ANALYTICS DASHBOARD ---
 const SuperAnalytics = ({ data, charts, setCharts, onUpdate }) => {
     if (!data || data.length === 0) return <div className="p-10 text-center text-slate-400">Chưa có dữ liệu. Vui lòng chạy truy vấn.</div>;
     const columns = Object.keys(data[0]);
-
     const addChart = (config) => setCharts(p => [...p, { id: Date.now(), ...config }]);
     const removeChart = (id) => setCharts(p => p.filter(c => c.id !== id));
-
     const templates = useMemo(() => {
         const find = k => columns.find(c => c.toLowerCase().includes(k));
-        return [
-            { label: 'Trạng thái', x: find('trạng thái') || find('status') },
-            { label: 'Giới tính', x: find('giới tính') || find('phái'), type: 'pie' },
-            { label: 'Ngành học', x: find('ngành') || find('chương trình') },
-            { label: 'Lớp', x: find('lớp') },
-            { label: 'Khu vực', x: find('khu vực') },
-        ].filter(t => t.x);
+        return [{ label: 'Trạng thái', x: find('trạng thái') || find('status') }, { label: 'Giới tính', x: find('giới tính') || find('phái'), type: 'pie' }, { label: 'Ngành học', x: find('ngành') || find('chương trình') }, { label: 'Lớp', x: find('lớp') }, { label: 'Khu vực', x: find('khu vực') }].filter(t => t.x);
     }, [columns]);
-
     return (
         <div className="h-full flex flex-col bg-slate-50">
             <div className="p-4 bg-white border-b border-slate-200">
-                <div className="flex flex-wrap gap-2 items-center">
-                    <span className="text-xs font-bold text-slate-400 uppercase mr-2">Mẫu nhanh:</span>
-                    {templates.map(t => (
-                        <button key={t.label} onClick={() => addChart({ x: t.x, y: ['count'], type: t.type || 'bar' })} className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium hover:bg-blue-100 border border-blue-200 transition-colors">+ {t.label}</button>
-                    ))}
-                    <div className="h-6 w-px bg-slate-200 mx-2"></div>
-                    <button onClick={() => addChart({ x: columns[0], y: 'count', type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
-                    {charts.length > 0 && <button onClick={() => setCharts([])} className="ml-auto text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 size={16}/></button>}
-                </div>
+                <div className="flex flex-wrap gap-2 items-center"><span className="text-xs font-bold text-slate-400 uppercase mr-2">Mẫu nhanh:</span>{templates.map(t => (<button key={t.label} onClick={() => addChart({ x: t.x, y: ['count'], type: t.type || 'bar' })} className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium hover:bg-blue-100 border border-blue-200 transition-colors">+ {t.label}</button>))}<div className="h-6 w-px bg-slate-200 mx-2"></div><button onClick={() => addChart({ x: columns[0], y: 'count', type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>{charts.length > 0 && <button onClick={() => setCharts([])} className="ml-auto text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 size={16}/></button>}</div>
             </div>
-            
-            <div className="flex-1 p-6 overflow-y-auto">
-                {charts.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300">
-                        <BarChart3 size={48} className="mb-2 opacity-50"/>
-                        <p>Chọn mẫu biểu đồ ở trên để bắt đầu phân tích</p>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
-                        {charts.map(chart => (
-                            <ChartCard 
-                                key={chart.id} 
-                                config={chart} 
-                                data={data} 
-                                onDelete={() => removeChart(chart.id)} 
-                                onUpdate={(newData) => onUpdate(chart.id, newData)}
-                            />
-                        ))}
-                    </div>
-                )}
-            </div>
+            <div className="flex-1 p-6 overflow-y-auto">{charts.length === 0 ? (<div className="h-full flex flex-col items-center justify-center text-slate-300"><BarChart3 size={48} className="mb-2 opacity-50"/><p>Chọn mẫu biểu đồ ở trên để bắt đầu phân tích</p></div>) : (<div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">{charts.map(chart => (<ChartCard key={chart.id} config={chart} data={data} onDelete={() => removeChart(chart.id)} onUpdate={(newData) => onUpdate(chart.id, newData)}/>))}</div>)}</div>
         </div>
     );
 };
@@ -850,17 +595,11 @@ const SuperAnalytics = ({ data, charts, setCharts, onUpdate }) => {
 export default function App() {
   const [user, setUser] = useState(null);
   const [sheetConfig, setSheetConfig] = useState(null);
-
-  useEffect(() => {
-      const savedUser = localStorage.getItem('pka_user_session');
-      if (savedUser) setUser(JSON.parse(savedUser));
-  }, []);
-
+  useEffect(() => { const savedUser = localStorage.getItem('pka_user_session'); if (savedUser) setUser(JSON.parse(savedUser)); }, []);
   const handleLoginSuccess = (u) => setUser(u);
   const handleConfig = (id, range) => setSheetConfig({ id, range });
   const handleLogout = () => { setUser(null); setSheetConfig(null); localStorage.removeItem('pka_user_session'); };
   const handleChangeSource = () => setSheetConfig(null);
-
   if (!user) return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
   if (!sheetConfig) return <SetupScreen onConfig={handleConfig} />;
   return <Dashboard user={user} config={sheetConfig} onLogout={handleLogout} onChangeSource={handleChangeSource} />;
