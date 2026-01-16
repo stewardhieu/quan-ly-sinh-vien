@@ -10,12 +10,13 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, ArrowUpDown, ArrowUp, ArrowDown,
-  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, ClipboardCheck
+  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, AlertCircle, ClipboardCheck
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
-const CONFIG_SHEET_NAME = '_PKA_CONFIG'; // Tên tab ẩn để lưu cấu hình
+const CONFIG_SHEET_NAME = '_PKA_CONFIG'; 
+const AUTO_SAVE_DELAY = 5000; // Debounce 5 giây theo yêu cầu
 
 // --- UTILS ---
 const formatValue = (value) => {
@@ -24,7 +25,36 @@ const formatValue = (value) => {
   return String(value);
 };
 
-const secureCopy = (text) => {
+// Component thông báo Copy thành công
+const ToastNotification = ({ message, isVisible, onClose }) => {
+    return (
+        <AnimatePresence>
+            {isVisible && (
+                <motion.div 
+                    initial={{ opacity: 0, y: 50, scale: 0.9 }} 
+                    animate={{ opacity: 1, y: 0, scale: 1 }} 
+                    exit={{ opacity: 0, y: 20, scale: 0.9 }}
+                    className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 z-50"
+                >
+                    <ClipboardCheck className="text-green-400" size={20} />
+                    <span className="text-sm font-medium">{message}</span>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+};
+
+const secureCopy = async (text) => {
+    // Ưu tiên dùng Clipboard API hiện đại trước
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (err) {
+            console.error(err);
+        }
+    }
+    // Fallback
     const textArea = document.createElement("textarea");
     textArea.value = text;
     textArea.style.position = "fixed";
@@ -60,25 +90,6 @@ const exportToExcelXML = (data, columns, filename) => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-};
-
-// --- COMPONENT: TOAST NOTIFICATION ---
-const Toast = ({ message, isVisible, onClose }) => {
-    return (
-        <AnimatePresence>
-            {isVisible && (
-                <motion.div 
-                    initial={{ opacity: 0, y: 50 }} 
-                    animate={{ opacity: 1, y: 0 }} 
-                    exit={{ opacity: 0, y: 50 }}
-                    className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium"
-                >
-                    <ClipboardCheck size={18} className="text-green-400" />
-                    {message}
-                </motion.div>
-            )}
-        </AnimatePresence>
-    );
 };
 
 // --- COMPONENT: POPUP CHỌN CỘT ---
@@ -299,19 +310,19 @@ const LoginScreen = ({ onLoginSuccess }) => {
   );
 };
 
-const SetupScreen = ({ onConfig }) => {
+const SetupScreen = ({ user, onConfig, onLogout }) => {
   const [sheetId, setSheetId] = useState('');
   const [range, setRange] = useState('Sheet1!A:Z');
   const [name, setName] = useState(''); // Tên gợi nhớ
   const [history, setHistory] = useState([]);
   const [editingId, setEditingId] = useState(null); // ID của item đang sửa tên
+  const [checking, setChecking] = useState(false);
 
   // Load lịch sử từ localStorage khi khởi chạy
   useEffect(() => {
       try {
           const savedHistory = JSON.parse(localStorage.getItem('sheet_history_v2') || '[]');
           setHistory(savedHistory);
-          // Tự động điền item mới nhất
           if (savedHistory.length > 0) {
               const latest = savedHistory[0];
               setSheetId(latest.id);
@@ -321,29 +332,43 @@ const SetupScreen = ({ onConfig }) => {
       } catch (e) { console.error("Lỗi đọc lịch sử", e); }
   }, []);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setChecking(true);
     const cleanId = sheetId.trim();
     const cleanRange = range.trim();
     const cleanName = name.trim();
-    const uniqueKey = `${cleanId}-${cleanRange}`; // Key duy nhất: ID + Range
 
-    // Tạo object lịch sử mới
+    // KIỂM TRA PHIÊN ĐĂNG NHẬP TRƯỚC KHI VÀO
+    try {
+        const metadataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}?key=${API_KEY}`;
+        await axios.get(metadataUrl, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+    } catch (error) {
+        setChecking(false);
+        if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+            alert("Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập Sheet này. Vui lòng đăng nhập lại.");
+            onLogout();
+            return;
+        } else {
+             alert("Không thể tìm thấy ID Sheet này. Vui lòng kiểm tra lại.");
+             return;
+        }
+    }
+
+    const uniqueKey = `${cleanId}-${cleanRange}`;
     const newItem = {
         key: uniqueKey,
         id: cleanId,
         range: cleanRange,
-        name: cleanName || `${cleanRange} (${cleanId.slice(0, 6)}...)`, // Tên mặc định nếu không nhập
+        name: cleanName || `${cleanRange} (${cleanId.slice(0, 6)}...)`, 
         date: new Date().toLocaleDateString('vi-VN')
     };
 
-    // Lọc bỏ item cũ trùng key (để đưa item mới lên đầu)
-    const newHistory = [newItem, ...history.filter(h => h.key !== uniqueKey)].slice(0, 10); // Lưu 10 item gần nhất
-    
+    const newHistory = [newItem, ...history.filter(h => h.key !== uniqueKey)].slice(0, 10);
     setHistory(newHistory);
     localStorage.setItem('sheet_history_v2', JSON.stringify(newHistory));
     
-    // Gửi cấu hình lên App
+    setChecking(false);
     onConfig(cleanId, cleanRange, newItem.name);
   };
 
@@ -360,20 +385,28 @@ const SetupScreen = ({ onConfig }) => {
       localStorage.setItem('sheet_history_v2', JSON.stringify(newHistory));
   };
 
-  // Logic sửa tên trực tiếp trên danh sách
   const startEditing = (e, item) => {
       e.stopPropagation();
       setEditingId(item.key);
-      // Khi bấm sửa, điền thông tin vào form chính để sửa
       setSheetId(item.id);
       setRange(item.range);
       setName(item.name);
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col bg-slate-50">
+        {/* HEADER NGAY TẠI TRANG CONFIG */}
+        <div className="px-4 py-3 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm">
+             <div className="font-bold text-blue-900 flex items-center gap-2"><Settings size={18}/> THIẾT LẬP DỮ LIỆU</div>
+             <div className="flex items-center gap-2">
+                 <span className="text-sm font-medium text-slate-700 hidden md:block">{user.name}</span>
+                 {user.imageUrl && <img src={user.imageUrl} alt="Avatar" className="w-8 h-8 rounded-full border border-slate-200" />}
+                 <button onClick={onLogout} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Đăng xuất"><LogOut size={18}/></button>
+             </div>
+        </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
       <div className="w-full max-w-lg p-8 bg-white rounded-xl shadow-lg border border-slate-200">
-        <h2 className="text-xl font-bold text-blue-900 mb-6 flex items-center gap-2"><Settings className="w-5 h-5" /> Cấu hình Nguồn Dữ liệu</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -389,14 +422,14 @@ const SetupScreen = ({ onConfig }) => {
             <input type="text" required value={range} onChange={(e) => setRange(e.target.value)} placeholder="Ví dụ: Sheet1!A:Z" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none font-mono text-sm" />
           </div>
 
-          <button type="submit" className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4">
-            <Check className="w-4 h-4" /> {editingId ? 'Cập nhật Dữ liệu' : 'Kết nối Dữ liệu'}
+          <button type="submit" disabled={checking} className="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium flex justify-center items-center gap-2 mt-4 disabled:opacity-70">
+            {checking ? <RefreshCw className="animate-spin w-4 h-4"/> : <Check className="w-4 h-4" />} {checking ? 'Đang kiểm tra...' : (editingId ? 'Cập nhật Dữ liệu' : 'Kết nối Dữ liệu')}
           </button>
         </form>
 
         {history.length > 0 && (
             <div className="mt-6 pt-4 border-t border-slate-100">
-                <p className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1"><History size={12}/> Đã lưu gần đây</p>
+                <p className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1"><History size={12}/> Đã lưu gần đây (Trên máy này)</p>
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                     {history.map((h) => (
                         <div key={h.key} onClick={() => useHistoryItem(h)} className={`group relative p-3 bg-slate-50 hover:bg-blue-50 rounded-lg cursor-pointer border transition-all ${sheetId === h.id && range === h.range ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
@@ -417,6 +450,7 @@ const SetupScreen = ({ onConfig }) => {
             </div>
         )}
       </div>
+      </div>
     </motion.div>
   );
 };
@@ -427,14 +461,14 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   
-  // STATE CHO TÍNH NĂNG TỰ ĐỘNG LƯU
-  const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', 'unsaved'
-  const [isConfigLoaded, setIsConfigLoaded] = useState(false); // Chỉ auto-save khi đã load config xong
-
   // TOAST STATE
-  const [toast, setToast] = useState({ message: '', visible: false });
+  const [toastMsg, setToastMsg] = useState('');
+  const [showToast, setShowToast] = useState(false);
 
-  // --- NEW STATES ---
+  // STATE CHO TÍNH NĂNG TỰ ĐỘNG LƯU
+  const [saveStatus, setSaveStatus] = useState('saved'); 
+  const [isConfigLoaded, setIsConfigLoaded] = useState(false); 
+
   const [bulkFilterMode, setBulkFilterMode] = useState('exact'); 
   const [activeSuggestionFilter, setActiveSuggestionFilter] = useState(null);
 
@@ -474,25 +508,21 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const tableRef = useRef(null);
   const resizingRef = useRef(null);
 
-  // Helper Toast
-  const showToast = (msg) => {
-      setToast({ message: msg, visible: true });
-      setTimeout(() => setToast({ ...toast, visible: false }), 3000);
+  const triggerToast = (msg) => {
+      setToastMsg(msg);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
   };
 
-  // NÂNG CẤP: Logic Reset bộ lọc thông minh (Tìm cột Mã, Họ tên...)
   const resetFilters = () => {
       const findCol = (keywords) => allColumns.find(c => keywords.some(k => c.toLowerCase().includes(k)));
-      
       const defaultCols = [
           findCol(['mã', 'mssv', 'code']), 
           findCol(['họ tên', 'tên', 'name']), 
           findCol(['khoá', 'khóa', 'course']), 
           findCol(['khoa', 'department'])
       ].filter(Boolean);
-
       const defaultFilterCol = findCol(['mã', 'mssv', 'code']) || '';
-
       setQueryConfig({
           selectedCols: defaultCols.length > 0 ? defaultCols : allColumns.slice(0, 5),
           bulkFilter: { column: defaultFilterCol, values: '' },
@@ -500,14 +530,11 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       });
   };
 
-  // NÂNG CẤP: Logic Update biểu đồ từ con (ChartCard)
   const updateChart = (id, newConfig) => {
       setCharts(prev => prev.map(c => c.id === id ? { ...c, ...newConfig } : c));
   };
 
   // --- LOGIC LƯU TRỮ CẤU HÌNH ---
-  
-  // Hàm lưu thực sự (Gọi API)
   const performSave = useCallback(async (currentCharts, currentQuery) => {
       setSaveStatus('saving');
       try {
@@ -515,19 +542,17 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               charts: currentCharts,
               queryConfig: currentQuery,
               meta: { 
-                  name: config.name, // Lưu tên gợi nhớ vào config sheet luôn
+                  name: config.name, 
                   lastUpdated: new Date().toISOString()
               }
           };
           const configString = JSON.stringify(configData);
 
-          // 1. Kiểm tra xem tab cấu hình tồn tại chưa
           const metadataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}?key=${API_KEY}`;
           const metadataRes = await axios.get(metadataUrl, { headers: { Authorization: `Bearer ${user.accessToken}` } });
           const sheets = metadataRes.data.sheets || [];
           const configSheetExists = sheets.some(s => s.properties.title === CONFIG_SHEET_NAME);
 
-          // 2. Nếu chưa, tạo tab mới và ẩn nó đi
           if (!configSheetExists) {
               const addSheetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}:batchUpdate`;
               await axios.post(addSheetUrl, {
@@ -539,7 +564,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
           }
 
-          // 3. Ghi dữ liệu vào ô A1
           const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${CONFIG_SHEET_NAME}!A1:A1?valueInputOption=RAW`;
           await axios.put(updateUrl, {
               values: [[configString]]
@@ -548,22 +572,19 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
           setSaveStatus('saved');
       } catch (error) {
           console.error("Lỗi lưu cấu hình:", error);
-          setSaveStatus('unsaved'); // Để user biết lỗi
+          setSaveStatus('unsaved'); 
       }
   }, [config.id, config.name, user.accessToken]);
 
-  // AUTO SAVE EFFECT: Debounce 5 giây (Tăng lên theo yêu cầu)
+  // AUTO SAVE EFFECT: Debounce 5 giây (ĐÃ ĐỔI TỪ 2s -> 5s)
   useEffect(() => {
-      // Chỉ chạy auto-save nếu đã load config lần đầu (tránh ghi đè dữ liệu rỗng khi mới vào)
       if (!isConfigLoaded) return;
-
-      setSaveStatus('unsaved'); // Đánh dấu là có thay đổi chưa lưu
-      
+      setSaveStatus('unsaved'); 
       const timer = setTimeout(() => {
           performSave(charts, queryConfig);
-      }, 5000); // 5 giây
+      }, AUTO_SAVE_DELAY); 
 
-      return () => clearTimeout(timer); // Xóa timer nếu user tiếp tục thao tác
+      return () => clearTimeout(timer); 
   }, [charts, queryConfig, isConfigLoaded, performSave]);
 
   const loadConfigFromSheet = async () => {
@@ -574,55 +595,38 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
           
           if (rows && rows.length > 0 && rows[0][0]) {
               const savedConfig = JSON.parse(rows[0][0]);
-              // Cập nhật state mà không kích hoạt auto-save ngay lập tức
               if (savedConfig.charts) setCharts(savedConfig.charts);
               if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
               
-              // LOGIC BACKUP NGƯỢC: Nếu trên Sheet có lưu tên, hãy cập nhật lại tên cho LocalStorage
-              // Đây chính là tính năng đồng bộ lịch sử giữa các máy
-              if (savedConfig.meta && savedConfig.meta.name) {
+              // LOGIC ĐỒNG BỘ NGƯỢC: Cập nhật tên vào LocalStorage nếu trên Sheet có tên
+              if (savedConfig.meta && savedConfig.meta.name && savedConfig.meta.name !== config.name) {
                  try {
                      const history = JSON.parse(localStorage.getItem('sheet_history_v2') || '[]');
                      const uniqueKey = `${config.id}-${config.range}`;
-                     
-                     // Kiểm tra xem item này đã có trong lịch sử chưa, nếu chưa thì thêm vào, nếu có thì cập nhật tên
-                     const existingItemIndex = history.findIndex(h => h.key === uniqueKey);
-                     
-                     let updatedHistory;
-                     if (existingItemIndex >= 0) {
-                         // Đã có -> Cập nhật tên mới nhất từ sheet
-                         updatedHistory = [...history];
-                         updatedHistory[existingItemIndex].name = savedConfig.meta.name;
-                     } else {
-                         // Chưa có (Máy mới) -> Thêm vào lịch sử
-                         const newItem = {
-                             key: uniqueKey,
-                             id: config.id,
-                             range: config.range,
-                             name: savedConfig.meta.name,
-                             date: new Date().toLocaleDateString('vi-VN')
-                         };
-                         updatedHistory = [newItem, ...history].slice(0, 10);
+                     // Cập nhật tên mới vào lịch sử local
+                     const updatedHistory = history.map(h => h.key === uniqueKey ? { ...h, name: savedConfig.meta.name } : h);
+                     // Nếu chưa có trong lịch sử (máy mới), thêm vào luôn
+                     if (!history.find(h => h.key === uniqueKey)) {
+                         updatedHistory.unshift({
+                             key: uniqueKey, id: config.id, range: config.range, name: savedConfig.meta.name, date: new Date().toLocaleDateString('vi-VN')
+                         });
                      }
-                     
                      localStorage.setItem('sheet_history_v2', JSON.stringify(updatedHistory));
-                     console.log("Đã đồng bộ lịch sử từ Sheet về Local:", savedConfig.meta.name);
-                 } catch(e) { console.error("Lỗi sync ngược", e); }
+                     console.log("Đã đồng bộ tên từ Sheet về Local:", savedConfig.meta.name);
+                 } catch(e) {}
               }
-
               console.log("Đã tải cấu hình từ Sheet thành công.");
           }
       } catch (error) {
           console.log("Chưa có cấu hình trên Sheet hoặc không thể đọc.");
       } finally {
-          setIsConfigLoaded(true); // Đánh dấu đã load xong, cho phép auto-save hoạt động từ giờ
+          setIsConfigLoaded(true); 
       }
   };
 
   const fetchGoogleSheetData = useCallback(async () => {
     setLoading(true); setLoadError(null);
     try {
-        // Tải dữ liệu chính
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.id}/values/${config.range}?key=${API_KEY}`;
         const response = await axios.get(url, { headers: { Authorization: `Bearer ${user.accessToken}` } });
         const result = response.data;
@@ -637,10 +641,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
             return rowObject;
         });
         setRawData(formattedData); setAllColumns(headers); 
-        
-        // Tự động tải cấu hình sau khi load data xong
         await loadConfigFromSheet();
-
         setQueryConfig(prev => { 
             if (prev.selectedCols.length === 0) {
                 const findCol = (keywords) => headers.find(c => keywords.some(k => c.toLowerCase().includes(k)));
@@ -765,8 +766,19 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const handleMouseEnter = (r, c) => { if (selection.isDragging) setSelection(prev => ({ ...prev, end: { row: r, col: c } })); };
   useEffect(() => { const up = () => { if (selection.isDragging) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging]);
   const getSelectionRange = useCallback(() => { const { start, end } = selection; if (start.row === null) return null; return { minR: Math.min(start.row, end.row), maxR: Math.max(start.row, end.row), minC: Math.min(start.col, end.col), maxC: Math.max(start.col, end.col) }; }, [selection]);
-  const handleCopyAll = () => { if (!resultState.data.length) return; const headers = resultState.visibleCols.join('\t'); const body = resultState.data.map(row => resultState.visibleCols.map(col => formatValue(row[col])).join('\t')).join('\n'); secureCopy(`${headers}\n${body}`); showToast(`Đã copy toàn bộ ${resultState.data.length} dòng!`); };
-  const handleCopy = useCallback(() => { const rg = getSelectionRange(); if (!rg || !resultState.data.length) return; const pageData = itemsPerPage === 'all' ? sortedData : sortedData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage); const rows = pageData.slice(rg.minR, rg.maxR + 1); const cols = resultState.visibleCols; const txt = rows.map(r => { const vals = []; for (let c = rg.minC; c <= rg.maxC; c++) vals.push(formatValue(r[cols[c]])); return vals.join('\t'); }).join('\n'); secureCopy(txt); showToast("Đã copy dữ liệu!"); }, [getSelectionRange, resultState, currentPage, itemsPerPage]);
+  const handleCopyAll = () => { if (!resultState.data.length) return; const headers = resultState.visibleCols.join('\t'); const body = resultState.data.map(row => resultState.visibleCols.map(col => formatValue(row[col])).join('\t')).join('\n'); secureCopy(`${headers}\n${body}`).then(() => triggerToast(`Đã copy toàn bộ ${resultState.data.length} dòng!`)); };
+  
+  const handleCopy = useCallback(async () => { 
+      const rg = getSelectionRange(); 
+      if (!rg || !resultState.data.length) return; 
+      const pageData = itemsPerPage === 'all' ? sortedData : sortedData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage); 
+      const rows = pageData.slice(rg.minR, rg.maxR + 1); 
+      const cols = resultState.visibleCols; 
+      const txt = rows.map(r => { const vals = []; for (let c = rg.minC; c <= rg.maxC; c++) vals.push(formatValue(r[cols[c]])); return vals.join('\t'); }).join('\n'); 
+      await secureCopy(txt);
+      triggerToast('Đã copy dữ liệu chọn!');
+  }, [getSelectionRange, resultState, currentPage, itemsPerPage]);
+
   useEffect(() => { const kd = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'c') { e.preventDefault(); handleCopy(); } }; window.addEventListener('keydown', kd); return () => window.removeEventListener('keydown', kd); }, [handleCopy]);
   const isCellSelected = (r, c) => { const rg = getSelectionRange(); return rg && r >= rg.minR && r <= rg.maxR && c >= rg.minC && c <= rg.maxC; };
   const filteredColumns = allColumns.filter(c => c.toLowerCase().includes(colSearchTerm.toLowerCase()));
@@ -833,7 +845,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         </div>
       </header>
 
-      <main className="flex-1 p-3 md:p-6 overflow-hidden flex flex-col gap-4 md:gap-6 relative">
+      <main className="flex-1 p-3 md:p-6 overflow-hidden flex flex-col gap-4 md:gap-6">
         {loadError && (<div className="bg-red-50 text-red-700 p-4 rounded-lg border border-red-200 flex items-center justify-between"><span>{loadError}</span><button onClick={() => setLoadError(null)}><X size={18}/></button></div>)}
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-5 flex flex-col gap-4">
@@ -929,14 +941,12 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                 )}
             </div>
         </div>
-
-        {/* TOAST RENDER */}
-        <Toast message={toast.message} isVisible={toast.visible} onClose={() => setToast({ ...toast, visible: false })} />
       </main>
       
       <ColumnSelectorModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} columns={allColumns} onSelect={handleColumnSelect} />
       <MultiValueSelectModal isOpen={!!activeSuggestionFilter} onClose={() => setActiveSuggestionFilter(null)} options={suggestionOptions} initialValue={suggestionInitialValue} onSave={handleSuggestionSave} title="Chọn giá trị từ cột" />
       <AdvancedSortModal isOpen={isSortModalOpen} onClose={() => setIsSortModalOpen(false)} columns={allColumns} sortRules={sortRules} onApply={setSortRules} />
+      <ToastNotification message={toastMsg} isVisible={showToast} onClose={() => setShowToast(false)} />
     </div>
   );
 };
@@ -1104,12 +1114,11 @@ export default function App() {
   }, []);
 
   const handleLoginSuccess = (u) => setUser(u);
-  // Thay đổi: Nhận thêm name (tên gợi nhớ) từ SetupScreen
   const handleConfig = (id, range, name) => setSheetConfig({ id, range, name });
   const handleLogout = () => { setUser(null); setSheetConfig(null); localStorage.removeItem('pka_user_session'); };
   const handleChangeSource = () => setSheetConfig(null);
 
   if (!user) return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
-  if (!sheetConfig) return <SetupScreen onConfig={handleConfig} />;
+  if (!sheetConfig) return <SetupScreen user={user} onConfig={handleConfig} onLogout={handleLogout} />;
   return <Dashboard user={user} config={sheetConfig} onLogout={handleLogout} onChangeSource={handleChangeSource} />;
 }
