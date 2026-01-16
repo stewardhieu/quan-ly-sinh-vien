@@ -26,6 +26,19 @@ const formatValue = (value) => {
   return String(value);
 };
 
+// THUẬT TOÁN TÌM KIẾM THÔNG MINH (A C -> tìm thấy A B C)
+const checkSmartMatch = (target, search) => {
+    if (!target) return false;
+    if (!search) return true;
+    
+    const targetStr = String(target).toLowerCase();
+    // Tách từ khóa tìm kiếm bằng dấu cách hoặc dấu phẩy
+    const keywords = String(search).toLowerCase().split(/[\s,]+/).filter(k => k.trim() !== '');
+    
+    // Logic: Dữ liệu phải chứa TẤT CẢ các từ khóa
+    return keywords.every(kw => targetStr.includes(kw));
+};
+
 // Component thông báo Copy thành công
 const ToastNotification = ({ message, isVisible, onClose }) => {
     return (
@@ -419,14 +432,12 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
         date: new Date().toLocaleDateString('vi-VN')
     };
 
-    // Tạo lịch sử mới (đưa item mới lên đầu)
     const newHistory = [newItem, ...history.filter(h => h.key !== uniqueKey)].slice(0, 20);
     setHistory(newHistory);
     localStorage.setItem('sheet_history_v2', JSON.stringify(newHistory));
     updateCloudHistory(newHistory);
     
     setChecking(false);
-    // QUAN TRỌNG: Truyền tên mới sang Dashboard để nó ghi đè lên Sheet
     onConfig(cleanId, cleanRange, newItem.name);
   };
 
@@ -609,38 +620,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       setCharts(prev => prev.map(c => c.id === id ? { ...c, ...newConfig } : c));
   };
 
-  const addFilterCondition = () => setQueryConfig(prev => ({ ...prev, filters: [...prev.filters, { id: Date.now(), column: '', condition: 'contains', value: '', operator: 'AND' }] }));
-  const removeFilterCondition = (id) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.filter(f => f.id !== id) }));
-  const updateFilter = (id, field, value) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.map(f => f.id === id ? { ...f, [field]: value } : f) }));
-
-  const checkCondition = (row, filter) => {
-      if (!filter.column || !filter.value) return true; 
-      const cellVal = String(row[filter.column] || '').toLowerCase();
-      const searchVals = String(filter.value).toLowerCase();
-      
-      // LOGIC MỚI: Tách từ khóa (Token Search)
-      // Nếu condition là 'contains' (mặc định), dùng logic Token
-      if (filter.condition === 'contains') {
-          const tokens = searchVals.split(/\s+/).filter(t => t.trim() !== '');
-          // Kiểm tra xem cellVal có chứa TẤT CẢ các từ khóa không
-          return tokens.every(token => cellVal.includes(token));
-      }
-
-      // Các logic cũ giữ nguyên
-      const legacySearchVals = searchVals.split(/[,;]+/).map(s => s.trim()).filter(s => s);
-      return legacySearchVals.some(searchVal => {
-          switch (filter.condition) {
-              case 'not_contains': return !cellVal.includes(searchVal);
-              case 'equals': return cellVal === searchVal;
-              case 'not_equals': return cellVal !== searchVal;
-              case 'starts': return cellVal.startsWith(searchVal);
-              case 'greater': return parseFloat(cellVal) >= parseFloat(searchVal);
-              case 'less': return parseFloat(cellVal) <= parseFloat(searchVal);
-              default: return true;
-          }
-      });
-  };
-
   const performSave = useCallback(async (currentCharts, currentQuery) => {
       setSaveStatus('saving');
       try {
@@ -704,6 +683,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
               
               // ĐÃ XÓA LOGIC ĐỒNG BỘ NGƯỢC "NGUY HIỂM" TẠI ĐÂY
+              // Để tránh việc tên cũ trên sheet ghi đè tên mới vừa đặt ở SetupScreen
               
               console.log("Đã tải cấu hình từ Sheet thành công.");
           }
@@ -775,6 +755,38 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const handleDragStart = (e, ci) => e.dataTransfer.setData("colIndex", ci);
   const handleDrop = (e, ti) => { const si = parseInt(e.dataTransfer.getData("colIndex")); if (si === ti) return; const nc = [...resultState.visibleCols]; const [mc] = nc.splice(si, 1); nc.splice(ti, 0, mc); setResultState(p => ({ ...p, visibleCols: nc })); };
 
+  const addFilterCondition = () => setQueryConfig(prev => ({ ...prev, filters: [...prev.filters, { id: Date.now(), column: '', condition: 'contains', value: '', operator: 'AND' }] }));
+  const removeFilterCondition = (id) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.filter(f => f.id !== id) }));
+  const updateFilter = (id, field, value) => setQueryConfig(prev => ({ ...prev, filters: prev.filters.map(f => f.id === id ? { ...f, [field]: value } : f) }));
+  
+  const openSuggestionModal = (filterId) => { setActiveSuggestionFilter(filterId); };
+  const handleSuggestionSave = (value) => {
+      if (activeSuggestionFilter) { updateFilter(activeSuggestionFilter, 'value', value); setActiveSuggestionFilter(null); }
+  };
+
+  const checkCondition = (row, filter) => {
+      if (!filter.column || !filter.value) return true; 
+      const cellVal = String(row[filter.column] || '').toLowerCase();
+      const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
+      
+      // LOGIC TÌM KIẾM CŨ (MATCH TỪNG GIÁ TRỊ)
+      // LOGIC MỚI: Chỉ áp dụng checkSmartMatch khi điều kiện là 'contains' và filter.value không phải danh sách nhiều giá trị ngăn cách phẩy (trừ khi cố ý)
+      // Ở đây tôi áp dụng checkSmartMatch cho logic 'contains'
+      
+      return searchVals.some(searchVal => {
+          switch (filter.condition) {
+              case 'contains': return checkSmartMatch(cellVal, searchVal); // DÙNG HÀM THÔNG MINH MỚI
+              case 'not_contains': return !checkSmartMatch(cellVal, searchVal);
+              case 'equals': return cellVal === searchVal;
+              case 'not_equals': return cellVal !== searchVal;
+              case 'starts': return cellVal.startsWith(searchVal);
+              case 'greater': return parseFloat(cellVal) >= parseFloat(searchVal);
+              case 'less': return parseFloat(cellVal) <= parseFloat(searchVal);
+              default: return true;
+          }
+      });
+  };
+
   const runQuery = () => {
     setHistory(prev => ({ past: [...prev.past, { config: { ...queryConfig }, result: { ...resultState } }], future: [] }));
     let filtered = [...rawData];
@@ -783,20 +795,40 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,;]+/); 
-      const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim().toLowerCase()).filter(s => s !== ''))];
+      // Lọc bỏ rỗng và trùng lặp trong input
+      const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim()).filter(s => s !== ''))];
       
       if (uniquePasteOrder.length > 0) {
           const rowMap = new Map();
           filtered.forEach(row => {
-              const cellVal = String(row[targetCol]).trim().toLowerCase();
+              const cellVal = String(row[targetCol]).trim(); // Không lowercase ở đây để giữ nguyên gốc nếu cần match chính xác
+              const cellValLower = cellVal.toLowerCase();
+
               if (bulkFilterMode === 'exact') {
-                  if (uniquePasteOrder.includes(cellVal)) { if (!rowMap.has(cellVal)) rowMap.set(cellVal, []); rowMap.get(cellVal).push(row); }
+                  // Chính xác: so sánh lower case
+                  if (uniquePasteOrder.some(val => val.toLowerCase() === cellValLower)) {
+                      // Tìm key gốc trong pasteOrder để group
+                      const key = uniquePasteOrder.find(val => val.toLowerCase() === cellValLower).toLowerCase();
+                      if (!rowMap.has(key)) rowMap.set(key, []); 
+                      rowMap.get(key).push(row); 
+                  }
               } else {
-                  const matchedKey = uniquePasteOrder.find(k => cellVal.includes(k));
-                  if (matchedKey) { if (!rowMap.has(matchedKey)) rowMap.set(matchedKey, []); rowMap.get(matchedKey).push(row); }
+                  // Gần đúng (Partial): Dùng checkSmartMatch
+                  // Duyệt qua danh sách paste, nếu row này match với bất kỳ dòng nào trong paste -> Lấy
+                  const matchedKey = uniquePasteOrder.find(searchKey => checkSmartMatch(cellVal, searchKey));
+                  if (matchedKey) { 
+                      const key = matchedKey.toLowerCase();
+                      if (!rowMap.has(key)) rowMap.set(key, []); 
+                      rowMap.get(key).push(row); 
+                  }
               }
           });
-          uniquePasteOrder.forEach(val => { if (rowMap.has(val)) orderedData.push(...rowMap.get(val)); });
+          
+          // Gom nhóm lại theo thứ tự paste
+          uniquePasteOrder.forEach(val => { 
+              const key = val.toLowerCase();
+              if (rowMap.has(key)) orderedData.push(...rowMap.get(key)); 
+          });
           filtered = orderedData;
       }
     }
@@ -950,15 +982,16 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                             </div>
                         </div>
                         <div className="flex flex-col gap-2">
-                            <div className="flex justify-between items-center">
+                            {/* FIX LAYOUT MOBILE: Dùng flex-wrap và padding phù hợp */}
+                            <div className="flex justify-between items-center bg-slate-100 p-2 rounded">
                                 <span className="text-xs font-semibold uppercase text-slate-500">Điều kiện chi tiết</span>
-                                <button type="button" onClick={addFilterCondition} className="text-xs flex items-center gap-1 text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded transition-colors shadow-sm border border-blue-100">
-                                    <Plus size={14} /> Thêm điều kiện
+                                <button onClick={addFilterCondition} className="text-xs flex items-center gap-1 bg-blue-900 text-white px-3 py-1.5 rounded hover:bg-blue-800 shadow-sm transition-transform active:scale-95">
+                                    <Plus size={14} /> <span className="font-medium">Thêm điều kiện</span>
                                 </button>
                             </div>
                             <div className="max-h-48 overflow-y-auto pr-1 space-y-2">
                                 {queryConfig.filters.map((filter, idx) => (
-                                    <div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0">
+                                    <div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0 bg-white p-2 rounded">
                                         <div className="flex items-center gap-1">{idx > 0 ? (<select className="border border-slate-300 bg-slate-100 rounded px-1 py-2 text-xs font-bold w-16" value={filter.operator} onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}><option value="AND">VÀ</option><option value="OR">HOẶC</option></select>) : <span className="text-slate-400 font-mono text-xs w-16 text-center">Bắt đầu</span>}</div>
                                         <div onClick={() => openColumnModal('filter', filter.id)} className="flex-1 border border-slate-300 rounded px-3 py-2 cursor-pointer hover:border-blue-500 bg-white flex justify-between items-center"><span className={`truncate ${!filter.column ? 'text-slate-400' : 'text-slate-800'}`}>{filter.column || "(Chọn cột)"}</span><ChevronDown size={14} className="text-slate-400"/></div>
                                         <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}><option value="contains">Chứa</option><option value="not_contains">Không chứa</option><option value="equals">Bằng tuyệt đối</option><option value="not_equals">Khác</option><option value="starts">Bắt đầu với</option><option value="greater">Lớn hơn</option><option value="less">Nhỏ hơn</option></select>
@@ -1016,102 +1049,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       <ToastNotification message={toastMsg} isVisible={showToast} onClose={() => setShowToast(false)} />
     </div>
   );
-};
-
-// --- CHART COMPONENTS (Nâng cấp Stack/Segment + Controlled) ---
-const ChartCard = ({ config, data, onDelete, onUpdate }) => {
-    // Không dùng state nội bộ nữa, dùng props từ config
-    const type = config.type || 'bar';
-    const xAxis = config.x || '';
-    const segmentBy = config.segmentBy || '';
-    
-    const columns = Object.keys(data[0] || {});
-
-    // Helper update function
-    const updateConfig = (key, value) => {
-        onUpdate({ [key]: value });
-    };
-
-    // Logic xử lý dữ liệu phức tạp (Segment / Stack)
-    const processed = useMemo(() => {
-        const segments = segmentBy ? [...new Set(data.map(r => r[segmentBy] || 'N/A'))].sort() : ['count'];
-        const grouped = data.reduce((acc, row) => {
-            const xVal = row[xAxis] || 'N/A';
-            if (!acc[xVal]) {
-                acc[xVal] = { name: xVal };
-                segments.forEach(seg => acc[xVal][seg] = 0);
-            }
-            const segKey = segmentBy ? (row[segmentBy] || 'N/A') : 'count';
-            acc[xVal][segKey] += 1;
-            return acc;
-        }, {});
-
-        return {
-            data: Object.values(grouped).sort((a,b) => b.count - a.count).slice(0, 20),
-            keys: segments
-        };
-    }, [data, xAxis, segmentBy]);
-
-    const COLORS = ['#003366', '#FF8042', '#00C49F', '#FFBB28', '#FF4444', '#8884d8', '#82ca9d'];
-    
-    const renderContent = () => {
-        const Cmp = { bar: BarChart, line: LineChart, area: AreaChart, pie: PieChart }[type] || BarChart;
-        
-        if (type === 'pie') {
-             return (
-                <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie data={processed.data} dataKey={processed.keys[0]} nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{processed.data.map((e,i)=> <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie>
-                        <RechartsTooltip /><Legend />
-                    </PieChart>
-                </ResponsiveContainer>
-             );
-        }
-
-        return (
-            <ResponsiveContainer width="100%" height="100%">
-                <Cmp data={processed.data}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" height={60} tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end"/>
-                    <YAxis />
-                    <RechartsTooltip />
-                    <Legend />
-                    {processed.keys.map((key, idx) => {
-                        const color = COLORS[idx % COLORS.length];
-                        const props = { key, dataKey: key, fill: color, stroke: color, stackId: segmentBy ? 'a' : undefined, name: key === 'count' ? 'Số lượng' : key };
-                        if (type === 'bar') return <Bar {...props} />;
-                        if (type === 'line') return <Line type="monotone" {...props} strokeWidth={2} />;
-                        if (type === 'area') return <Area type="monotone" {...props} />;
-                        return <Bar {...props} />;
-                    })}
-                </Cmp>
-            </ResponsiveContainer>
-        );
-    };
-
-    return (
-        <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-96 flex flex-col">
-            <div className="flex flex-wrap justify-between items-center mb-4 border-b border-slate-100 pb-2 gap-2">
-                <div className="flex gap-2 items-center flex-1 overflow-x-auto">
-                    <select className="text-xs border rounded p-1 font-bold text-blue-900" value={type} onChange={e=>updateConfig('type', e.target.value)}><option value="bar">Cột</option><option value="line">Đường</option><option value="pie">Tròn</option><option value="area">Vùng</option></select>
-                    <span className="text-xs text-slate-400 whitespace-nowrap">Trục X:</span>
-                    <select className="text-xs border rounded p-1 max-w-[100px]" value={xAxis} onChange={e=>updateConfig('x', e.target.value)}>{columns.map(c=><option key={c} value={c}>{c}</option>)}</select>
-                    
-                    {type !== 'pie' && (
-                        <>
-                            <span className="text-xs text-slate-400 whitespace-nowrap flex items-center gap-1"><Split size={12}/> Chia theo:</span>
-                            <select className="text-xs border rounded p-1 max-w-[100px]" value={segmentBy} onChange={e=>updateConfig('segmentBy', e.target.value)}>
-                                <option value="">(Không)</option>
-                                {columns.map(c=><option key={c} value={c}>{c}</option>)}
-                            </select>
-                        </>
-                    )}
-                </div>
-                <button onClick={onDelete} className="text-slate-300 hover:text-red-500"><X size={16}/></button>
-            </div>
-            <div className="flex-1 min-h-0 text-xs font-medium">{renderContent()}</div>
-        </motion.div>
-    );
 };
 
 export default function App() {
