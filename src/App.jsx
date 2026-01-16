@@ -313,10 +313,12 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
   const [editingId, setEditingId] = useState(null); 
   const [checking, setChecking] = useState(false);
   const [syncingHistory, setSyncingHistory] = useState(false);
+  const [drivePermissionError, setDrivePermissionError] = useState(false); // State mới để báo lỗi quyền
   
   // LOGIC ĐỒNG BỘ LỊCH SỬ TỪ GOOGLE DRIVE (SỔ CÁI)
   const syncHistoryWithDrive = useCallback(async () => {
     setSyncingHistory(true);
+    setDrivePermissionError(false);
     try {
         // 1. Tìm file 'Sổ cái' trên Drive
         const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${GLOBAL_HISTORY_FILE_NAME}' and trashed=false&fields=files(id, name)`;
@@ -337,7 +339,6 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
             }
         } else {
             // Chưa có file sổ cái -> Tạo mới
-            const createUrl = 'https://www.googleapis.com/drive/v3/files';
             // Tạo metadata cho file sheet mới
             const createRes = await axios.post('https://sheets.googleapis.com/v4/spreadsheets', {
                 properties: { title: GLOBAL_HISTORY_FILE_NAME }
@@ -358,7 +359,7 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
                 uniqueHistory.push(item);
             }
         }
-        // Sắp xếp theo ngày mới nhất (giả định) hoặc giữ nguyên thứ tự merge
+        
         const finalHistory = uniqueHistory.slice(0, 20); // Giữ 20 item gần nhất
 
         setHistory(finalHistory);
@@ -373,6 +374,10 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
 
     } catch (error) {
         console.error("Lỗi đồng bộ lịch sử Drive:", error);
+        // Bắt lỗi 403 (Thiếu quyền)
+        if (error.response && error.response.status === 403) {
+            setDrivePermissionError(true);
+        }
     }
     setSyncingHistory(false);
   }, [user.accessToken]);
@@ -496,6 +501,17 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
                 <p className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1"><History size={12}/> Lịch sử truy cập</p>
                 {syncingHistory && <span className="text-xs text-blue-500 flex items-center gap-1"><RefreshCw size={10} className="animate-spin"/> Đang đồng bộ từ Drive...</span>}
             </div>
+
+            {/* HIỂN THỊ CẢNH BÁO NẾU THIẾU QUYỀN */}
+            {drivePermissionError && (
+                <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800 flex items-start gap-2">
+                    <AlertCircle size={16} className="shrink-0 mt-0.5"/>
+                    <div>
+                        <span className="font-bold">Chưa đồng bộ được lịch sử:</span> Bạn cần cấp thêm quyền Google Drive. <br/>
+                        <button onClick={onLogout} className="underline text-blue-700 font-bold mt-1">Bấm vào đây để Đăng xuất & Đăng nhập lại</button>
+                    </div>
+                </div>
+            )}
             
             {history.length > 0 ? (
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
