@@ -10,13 +10,14 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, ArrowUpDown, ArrowUp, ArrowDown,
-  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, AlertCircle, ClipboardCheck
+  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, AlertCircle, ClipboardCheck, CloudCog
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
 const CONFIG_SHEET_NAME = '_PKA_CONFIG'; 
-const AUTO_SAVE_DELAY = 5000; // Debounce 5 giây theo yêu cầu
+const GLOBAL_HISTORY_FILE_NAME = '_PKA_GLOBAL_HISTORY_V1'; // Tên file "Sổ cái" lưu lịch sử trên Drive
+const AUTO_SAVE_DELAY = 5000;
 
 // --- UTILS ---
 const formatValue = (value) => {
@@ -45,16 +46,9 @@ const ToastNotification = ({ message, isVisible, onClose }) => {
 };
 
 const secureCopy = async (text) => {
-    // Ưu tiên dùng Clipboard API hiện đại trước
     if (navigator.clipboard && window.isSecureContext) {
-        try {
-            await navigator.clipboard.writeText(text);
-            return true;
-        } catch (err) {
-            console.error(err);
-        }
+        try { await navigator.clipboard.writeText(text); return true; } catch (err) { console.error(err); }
     }
-    // Fallback
     const textArea = document.createElement("textarea");
     textArea.value = text;
     textArea.style.position = "fixed";
@@ -290,7 +284,8 @@ const LoginScreen = ({ onLoginSuccess }) => {
       setLoading(false);
     },
     onError: (error) => { console.error("Login Failed:", error); alert("Đăng nhập thất bại."); },
-    scope: "https://www.googleapis.com/auth/spreadsheets",
+    // THÊM 'drive.file' VÀO SCOPE ĐỂ ĐỒNG BỘ LỊCH SỬ
+    scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
   });
 
   return (
@@ -313,24 +308,90 @@ const LoginScreen = ({ onLoginSuccess }) => {
 const SetupScreen = ({ user, onConfig, onLogout }) => {
   const [sheetId, setSheetId] = useState('');
   const [range, setRange] = useState('Sheet1!A:Z');
-  const [name, setName] = useState(''); // Tên gợi nhớ
+  const [name, setName] = useState(''); 
   const [history, setHistory] = useState([]);
-  const [editingId, setEditingId] = useState(null); // ID của item đang sửa tên
+  const [editingId, setEditingId] = useState(null); 
   const [checking, setChecking] = useState(false);
+  const [syncingHistory, setSyncingHistory] = useState(false);
+  
+  // LOGIC ĐỒNG BỘ LỊCH SỬ TỪ GOOGLE DRIVE (SỔ CÁI)
+  const syncHistoryWithDrive = useCallback(async () => {
+    setSyncingHistory(true);
+    try {
+        // 1. Tìm file 'Sổ cái' trên Drive
+        const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${GLOBAL_HISTORY_FILE_NAME}' and trashed=false&fields=files(id, name)`;
+        const searchRes = await axios.get(searchUrl, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+        
+        let fileId = null;
+        let cloudHistory = [];
 
-  // Load lịch sử từ localStorage khi khởi chạy
+        if (searchRes.data.files && searchRes.data.files.length > 0) {
+            // Đã có file sổ cái -> Đọc dữ liệu
+            fileId = searchRes.data.files[0].id;
+            const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/Sheet1!A1:A1?key=${API_KEY}`;
+            const readRes = await axios.get(readUrl, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+            if (readRes.data.values && readRes.data.values[0]) {
+                try {
+                    cloudHistory = JSON.parse(readRes.data.values[0][0]);
+                } catch (e) { console.error("Lỗi parse history từ cloud", e); }
+            }
+        } else {
+            // Chưa có file sổ cái -> Tạo mới
+            const createUrl = 'https://www.googleapis.com/drive/v3/files';
+            // Tạo metadata cho file sheet mới
+            const createRes = await axios.post('https://sheets.googleapis.com/v4/spreadsheets', {
+                properties: { title: GLOBAL_HISTORY_FILE_NAME }
+            }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+            fileId = createRes.data.spreadsheetId;
+        }
+
+        // 2. Merge với LocalStorage (Local + Cloud) -> Lấy Unique
+        const localHistory = JSON.parse(localStorage.getItem('sheet_history_v2') || '[]');
+        const combined = [...localHistory, ...cloudHistory];
+        
+        // Lọc trùng lặp dựa trên key
+        const uniqueHistory = [];
+        const map = new Map();
+        for (const item of combined) {
+            if (!map.has(item.key)) {
+                map.set(item.key, true);
+                uniqueHistory.push(item);
+            }
+        }
+        // Sắp xếp theo ngày mới nhất (giả định) hoặc giữ nguyên thứ tự merge
+        const finalHistory = uniqueHistory.slice(0, 20); // Giữ 20 item gần nhất
+
+        setHistory(finalHistory);
+        localStorage.setItem('sheet_history_v2', JSON.stringify(finalHistory));
+
+        // 3. Ghi ngược lại lên Cloud để đồng bộ cho các máy khác
+        if (fileId) {
+             const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/Sheet1!A1:A1?valueInputOption=RAW`;
+             await axios.put(updateUrl, { values: [[JSON.stringify(finalHistory)]] }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+             localStorage.setItem('pka_global_history_id', fileId); // Lưu ID file sổ cái để dùng sau
+        }
+
+    } catch (error) {
+        console.error("Lỗi đồng bộ lịch sử Drive:", error);
+    }
+    setSyncingHistory(false);
+  }, [user.accessToken]);
+
+  // Chạy đồng bộ khi mới vào SetupScreen
   useEffect(() => {
-      try {
-          const savedHistory = JSON.parse(localStorage.getItem('sheet_history_v2') || '[]');
-          setHistory(savedHistory);
-          if (savedHistory.length > 0) {
-              const latest = savedHistory[0];
-              setSheetId(latest.id);
-              setRange(latest.range);
-              setName(latest.name || '');
-          }
-      } catch (e) { console.error("Lỗi đọc lịch sử", e); }
-  }, []);
+      syncHistoryWithDrive();
+  }, [syncHistoryWithDrive]);
+
+
+  const updateCloudHistory = async (newHistory) => {
+      const fileId = localStorage.getItem('pka_global_history_id');
+      if (fileId) {
+          try {
+             const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/Sheet1!A1:A1?valueInputOption=RAW`;
+             await axios.put(updateUrl, { values: [[JSON.stringify(newHistory)]] }, { headers: { Authorization: `Bearer ${user.accessToken}` } });
+          } catch(e) { console.error("Lỗi cập nhật cloud history", e); }
+      }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -339,7 +400,7 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
     const cleanRange = range.trim();
     const cleanName = name.trim();
 
-    // KIỂM TRA PHIÊN ĐĂNG NHẬP TRƯỚC KHI VÀO
+    // KIỂM TRA PHIÊN ĐĂNG NHẬP
     try {
         const metadataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}?key=${API_KEY}`;
         await axios.get(metadataUrl, { headers: { Authorization: `Bearer ${user.accessToken}` } });
@@ -364,9 +425,12 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
         date: new Date().toLocaleDateString('vi-VN')
     };
 
-    const newHistory = [newItem, ...history.filter(h => h.key !== uniqueKey)].slice(0, 10);
+    const newHistory = [newItem, ...history.filter(h => h.key !== uniqueKey)].slice(0, 20);
     setHistory(newHistory);
     localStorage.setItem('sheet_history_v2', JSON.stringify(newHistory));
+    
+    // Trigger update lên Cloud
+    updateCloudHistory(newHistory);
     
     setChecking(false);
     onConfig(cleanId, cleanRange, newItem.name);
@@ -383,6 +447,7 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
       const newHistory = history.filter(h => h.key !== keyToDelete);
       setHistory(newHistory);
       localStorage.setItem('sheet_history_v2', JSON.stringify(newHistory));
+      updateCloudHistory(newHistory);
   };
 
   const startEditing = (e, item) => {
@@ -395,7 +460,6 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="min-h-screen flex flex-col bg-slate-50">
-        {/* HEADER NGAY TẠI TRANG CONFIG */}
         <div className="px-4 py-3 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm">
              <div className="font-bold text-blue-900 flex items-center gap-2"><Settings size={18}/> THIẾT LẬP DỮ LIỆU</div>
              <div className="flex items-center gap-2">
@@ -427,14 +491,21 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
           </button>
         </form>
 
-        {history.length > 0 && (
-            <div className="mt-6 pt-4 border-t border-slate-100">
-                <p className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1"><History size={12}/> Đã lưu gần đây (Trên máy này)</p>
+        <div className="mt-6 pt-4 border-t border-slate-100">
+            <div className="flex justify-between items-center mb-3">
+                <p className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1"><History size={12}/> Lịch sử truy cập</p>
+                {syncingHistory && <span className="text-xs text-blue-500 flex items-center gap-1"><RefreshCw size={10} className="animate-spin"/> Đang đồng bộ từ Drive...</span>}
+            </div>
+            
+            {history.length > 0 ? (
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                     {history.map((h) => (
                         <div key={h.key} onClick={() => useHistoryItem(h)} className={`group relative p-3 bg-slate-50 hover:bg-blue-50 rounded-lg cursor-pointer border transition-all ${sheetId === h.id && range === h.range ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
                             <div className="flex justify-between items-start">
-                                <div className="font-bold text-blue-900 text-sm truncate pr-6">{h.name}</div>
+                                <div className="font-bold text-blue-900 text-sm truncate pr-6 flex items-center gap-1">
+                                    {h.name}
+                                    <CloudCog size={12} className="text-blue-400" title="Đã đồng bộ Cloud"/>
+                                </div>
                                 <div className="text-[10px] text-slate-400 whitespace-nowrap">{h.date}</div>
                             </div>
                             <div className="text-xs text-slate-500 mt-1 font-mono truncate" title={h.id}>ID: {h.id.slice(0,8)}...</div>
@@ -447,8 +518,10 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
                         </div>
                     ))}
                 </div>
-            </div>
-        )}
+            ) : (
+                <div className="text-center text-slate-400 text-xs py-4">Chưa có dữ liệu nào.</div>
+            )}
+        </div>
       </div>
       </div>
     </motion.div>
