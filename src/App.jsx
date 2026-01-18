@@ -26,7 +26,6 @@ const formatValue = (value) => {
   return String(value);
 };
 
-// HÀM CHUẨN HÓA TIẾNG VIỆT (Quan trọng cho tìm kiếm)
 const removeVietnameseTones = (str) => {
     str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g,"a"); 
     str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g,"e"); 
@@ -45,19 +44,12 @@ const removeVietnameseTones = (str) => {
     return str;
 }
 
-// SO SÁNH THÔNG MINH (A B C match A C)
 const checkSmartMatch = (target, search) => {
     if (!target) return false;
     if (!search) return true;
-    
-    // Chuẩn hóa cả 2 về dạng: chữ thường + không dấu
     const targetStr = removeVietnameseTones(String(target).toLowerCase());
     const searchStr = removeVietnameseTones(String(search).toLowerCase());
-    
-    // Tách từ khóa tìm kiếm
     const keywords = searchStr.split(/[\s,]+/).filter(k => k.trim() !== '');
-    
-    // Tất cả từ khóa phải xuất hiện trong target
     return keywords.every(kw => targetStr.includes(kw));
 };
 
@@ -784,17 +776,16 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   const checkCondition = (row, filter) => {
       if (!filter.column || !filter.value) return true; 
-      // FIX LỖI: Dùng giá trị thô, không lowercase tại đây để tránh lệch pha với hàm removeVietnameseTones bên trong checkSmartMatch
-      const cellVal = String(row[filter.column] || ''); 
-      const searchVals = String(filter.value).split(/[,;]+/).map(s => s.trim()).filter(s => s);
+      const cellVal = String(row[filter.column] || '').toLowerCase();
+      const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
       
       return searchVals.some(searchVal => {
           switch (filter.condition) {
-              case 'contains': return checkSmartMatch(cellVal, searchVal); // Hàm thông minh tự lo lowercase + bỏ dấu
+              case 'contains': return checkSmartMatch(cellVal, searchVal); 
               case 'not_contains': return !checkSmartMatch(cellVal, searchVal);
-              case 'equals': return cellVal.toLowerCase() === searchVal.toLowerCase();
-              case 'not_equals': return cellVal.toLowerCase() !== searchVal.toLowerCase();
-              case 'starts': return cellVal.toLowerCase().startsWith(searchVal.toLowerCase());
+              case 'equals': return cellVal === searchVal;
+              case 'not_equals': return cellVal !== searchVal;
+              case 'starts': return cellVal.startsWith(searchVal);
               case 'greater': return parseFloat(cellVal) >= parseFloat(searchVal);
               case 'less': return parseFloat(cellVal) <= parseFloat(searchVal);
               default: return true;
@@ -817,18 +808,15 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
           const rowMap = new Map();
           filtered.forEach(row => {
               const cellVal = String(row[targetCol]).trim(); 
-              // FIX LỖI: Dùng checkSmartMatch cho cả chế độ 'partial'
-              // Chế độ 'exact' vẫn so sánh cứng nhưng lowercase
-              
+              const cellValLower = cellVal.toLowerCase();
+
               if (bulkFilterMode === 'exact') {
-                  const cellValLower = cellVal.toLowerCase();
                   if (uniquePasteOrder.some(val => val.toLowerCase() === cellValLower)) {
                       const key = uniquePasteOrder.find(val => val.toLowerCase() === cellValLower).toLowerCase();
                       if (!rowMap.has(key)) rowMap.set(key, []); 
                       rowMap.get(key).push(row); 
                   }
               } else {
-                  // Partial: Dùng checkSmartMatch để tìm gần đúng thông minh
                   const matchedKey = uniquePasteOrder.find(searchKey => checkSmartMatch(cellVal, searchKey));
                   if (matchedKey) { 
                       const key = matchedKey.toLowerCase();
@@ -857,7 +845,8 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         return result;
     });
 
-    setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
+    // CHỈNH SỬA QUAN TRỌNG: Chỉ hiện đúng các cột đã chọn (Nếu rỗng thì hiện rỗng)
+    setResultState({ data: filtered, visibleCols: queryConfig.selectedCols, isExecuted: true });
     setCurrentPage(1); setSortRules([]); 
     setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
