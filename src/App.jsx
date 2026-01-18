@@ -26,6 +26,7 @@ const formatValue = (value) => {
   return String(value);
 };
 
+// HÀM CHUẨN HÓA TIẾNG VIỆT (Quan trọng cho tìm kiếm)
 const removeVietnameseTones = (str) => {
     str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g,"a"); 
     str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g,"e"); 
@@ -44,12 +45,19 @@ const removeVietnameseTones = (str) => {
     return str;
 }
 
+// SO SÁNH THÔNG MINH (A B C match A C)
 const checkSmartMatch = (target, search) => {
     if (!target) return false;
     if (!search) return true;
+    
+    // Chuẩn hóa cả 2 về dạng: chữ thường + không dấu
     const targetStr = removeVietnameseTones(String(target).toLowerCase());
     const searchStr = removeVietnameseTones(String(search).toLowerCase());
+    
+    // Tách từ khóa tìm kiếm
     const keywords = searchStr.split(/[\s,]+/).filter(k => k.trim() !== '');
+    
+    // Tất cả từ khóa phải xuất hiện trong target
     return keywords.every(kw => targetStr.includes(kw));
 };
 
@@ -776,16 +784,17 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   const checkCondition = (row, filter) => {
       if (!filter.column || !filter.value) return true; 
-      const cellVal = String(row[filter.column] || '').toLowerCase();
-      const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
+      // FIX LỖI: Dùng giá trị thô, không lowercase tại đây để tránh lệch pha với hàm removeVietnameseTones bên trong checkSmartMatch
+      const cellVal = String(row[filter.column] || ''); 
+      const searchVals = String(filter.value).split(/[,;]+/).map(s => s.trim()).filter(s => s);
       
       return searchVals.some(searchVal => {
           switch (filter.condition) {
-              case 'contains': return checkSmartMatch(cellVal, searchVal); 
+              case 'contains': return checkSmartMatch(cellVal, searchVal); // Hàm thông minh tự lo lowercase + bỏ dấu
               case 'not_contains': return !checkSmartMatch(cellVal, searchVal);
-              case 'equals': return cellVal === searchVal;
-              case 'not_equals': return cellVal !== searchVal;
-              case 'starts': return cellVal.startsWith(searchVal);
+              case 'equals': return cellVal.toLowerCase() === searchVal.toLowerCase();
+              case 'not_equals': return cellVal.toLowerCase() !== searchVal.toLowerCase();
+              case 'starts': return cellVal.toLowerCase().startsWith(searchVal.toLowerCase());
               case 'greater': return parseFloat(cellVal) >= parseFloat(searchVal);
               case 'less': return parseFloat(cellVal) <= parseFloat(searchVal);
               default: return true;
@@ -801,21 +810,25 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,;]+/); 
+      // Lọc bỏ rỗng và trùng lặp trong input
       const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim()).filter(s => s !== ''))];
       
       if (uniquePasteOrder.length > 0) {
           const rowMap = new Map();
           filtered.forEach(row => {
               const cellVal = String(row[targetCol]).trim(); 
-              const cellValLower = cellVal.toLowerCase();
-
+              // FIX LỖI: Dùng checkSmartMatch cho cả chế độ 'partial'
+              // Chế độ 'exact' vẫn so sánh cứng nhưng lowercase
+              
               if (bulkFilterMode === 'exact') {
+                  const cellValLower = cellVal.toLowerCase();
                   if (uniquePasteOrder.some(val => val.toLowerCase() === cellValLower)) {
                       const key = uniquePasteOrder.find(val => val.toLowerCase() === cellValLower).toLowerCase();
                       if (!rowMap.has(key)) rowMap.set(key, []); 
                       rowMap.get(key).push(row); 
                   }
               } else {
+                  // Partial: Dùng checkSmartMatch để tìm gần đúng thông minh
                   const matchedKey = uniquePasteOrder.find(searchKey => checkSmartMatch(cellVal, searchKey));
                   if (matchedKey) { 
                       const key = matchedKey.toLowerCase();
@@ -861,16 +874,14 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const handleCellClick = (r, c) => {
       if (!isMobileSelectMode) return;
       
-      // Nếu chưa có điểm bắt đầu hoặc đã chọn xong 1 vùng -> Bắt đầu chọn lại
       if (selection.start.row === null || !selection.isDragging) {
            setSelection({
                start: { row: r, col: c },
                end: { row: r, col: c },
-               isDragging: true // Đang trong trạng thái chờ điểm cuối
+               isDragging: true 
            });
            triggerToast("Hãy chạm vào ô cuối cùng để chọn vùng");
       } else {
-           // Đã có điểm đầu, giờ set điểm cuối và kết thúc
            setSelection(prev => ({
                ...prev,
                end: { row: r, col: c },
@@ -1066,7 +1077,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
                         <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap hidden md:inline">{resultState.data.length} dòng</span>
                         <button onClick={() => setIsSortModalOpen(true)} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><ListFilter size={16} /> Sort</button>
-                        <button onClick={handleCopyAll} className="hidden md:flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> All</button>
+                        <button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> All</button>
                         <button onClick={() => exportToExcelXML(resultState.data, resultState.visibleCols, 'KetQua.xls')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
                      </div>
                  )}
