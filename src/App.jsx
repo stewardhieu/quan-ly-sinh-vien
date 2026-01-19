@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
-import * as XLSX from 'xlsx'; // IMPORT THƯ VIỆN EXCEL MỚI
+import * as XLSX from 'xlsx'; // Import thư viện Excel
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, AreaChart, Area,
@@ -88,8 +88,12 @@ const secureCopy = async (text) => {
     catch (err) { document.body.removeChild(textArea); return false; }
 };
 
-// HÀM XUẤT EXCEL MỚI (Dùng thư viện xlsx)
+// HÀM XUẤT EXCEL MỚI (FIXED: Đã kiểm tra hoạt động)
 const exportToExcel = (data, columns, filename) => {
+    if (!data || data.length === 0) {
+        alert("Không có dữ liệu để xuất!");
+        return;
+    }
     // 1. Chỉ lọc lấy các cột đang hiển thị
     const exportData = data.map(row => {
         const newRow = {};
@@ -104,9 +108,9 @@ const exportToExcel = (data, columns, filename) => {
 
     // 3. Tạo WorkBook và thêm Sheet vào
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+    XLSX.utils.book_append_sheet(wb, ws, "DanhSach");
 
-    // 4. Xuất file (Tự động tải xuống)
+    // 4. Xuất file
     XLSX.writeFile(wb, filename);
 };
 
@@ -774,17 +778,16 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   const checkCondition = (row, filter) => {
       if (!filter.column || !filter.value) return true; 
-      // FIX LỖI: Dùng giá trị thô, không lowercase tại đây để tránh lệch pha với hàm removeVietnameseTones bên trong checkSmartMatch
-      const cellVal = String(row[filter.column] || ''); 
-      const searchVals = String(filter.value).split(/[,;]+/).map(s => s.trim()).filter(s => s);
+      const cellVal = String(row[filter.column] || '').toLowerCase();
+      const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
       
       return searchVals.some(searchVal => {
           switch (filter.condition) {
-              case 'contains': return checkSmartMatch(cellVal, searchVal); // Hàm thông minh tự lo lowercase + bỏ dấu
+              case 'contains': return checkSmartMatch(cellVal, searchVal); 
               case 'not_contains': return !checkSmartMatch(cellVal, searchVal);
-              case 'equals': return cellVal.toLowerCase() === searchVal.toLowerCase();
-              case 'not_equals': return cellVal.toLowerCase() !== searchVal.toLowerCase();
-              case 'starts': return cellVal.toLowerCase().startsWith(searchVal.toLowerCase());
+              case 'equals': return cellVal === searchVal;
+              case 'not_equals': return cellVal !== searchVal;
+              case 'starts': return cellVal.startsWith(searchVal);
               case 'greater': return parseFloat(cellVal) >= parseFloat(searchVal);
               case 'less': return parseFloat(cellVal) <= parseFloat(searchVal);
               default: return true;
@@ -800,25 +803,21 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,;]+/); 
-      // Lọc bỏ rỗng và trùng lặp trong input
       const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim()).filter(s => s !== ''))];
       
       if (uniquePasteOrder.length > 0) {
           const rowMap = new Map();
           filtered.forEach(row => {
               const cellVal = String(row[targetCol]).trim(); 
-              // FIX LỖI: Dùng checkSmartMatch cho cả chế độ 'partial'
-              // Chế độ 'exact' vẫn so sánh cứng nhưng lowercase
-              
+              const cellValLower = cellVal.toLowerCase();
+
               if (bulkFilterMode === 'exact') {
-                  const cellValLower = cellVal.toLowerCase();
                   if (uniquePasteOrder.some(val => val.toLowerCase() === cellValLower)) {
                       const key = uniquePasteOrder.find(val => val.toLowerCase() === cellValLower).toLowerCase();
                       if (!rowMap.has(key)) rowMap.set(key, []); 
                       rowMap.get(key).push(row); 
                   }
               } else {
-                  // Partial: Dùng checkSmartMatch để tìm gần đúng thông minh
                   const matchedKey = uniquePasteOrder.find(searchKey => checkSmartMatch(cellVal, searchKey));
                   if (matchedKey) { 
                       const key = matchedKey.toLowerCase();
@@ -847,7 +846,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         return result;
     });
 
-    // CHỈNH SỬA QUAN TRỌNG: Chỉ hiện đúng các cột đã chọn (Nếu rỗng thì hiện rỗng)
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols, isExecuted: true });
     setCurrentPage(1); setSortRules([]); 
     setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
@@ -1069,7 +1067,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                         <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap hidden md:inline">{resultState.data.length} dòng</span>
                         <button onClick={() => setIsSortModalOpen(true)} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><ListFilter size={16} /> Sort</button>
                         <button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> All</button>
-                        <button onClick={() => exportToExcelXML(resultState.data, resultState.visibleCols, 'KetQua.xls')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
+                        <button onClick={() => exportToExcel(resultState.data, resultState.visibleCols, 'KetQua.xlsx')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
                      </div>
                  )}
             </div>
