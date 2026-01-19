@@ -88,13 +88,11 @@ const secureCopy = async (text) => {
     catch (err) { document.body.removeChild(textArea); return false; }
 };
 
-// HÀM XUẤT EXCEL MỚI (CHUẨN .XLSX)
 const exportToExcel = (data, columns, filename) => {
     if (!data || data.length === 0) {
         alert("Không có dữ liệu để xuất!");
         return;
     }
-    // 1. Chỉ lọc lấy các cột đang hiển thị
     const exportData = data.map(row => {
         const newRow = {};
         columns.forEach(col => {
@@ -102,15 +100,9 @@ const exportToExcel = (data, columns, filename) => {
         });
         return newRow;
     });
-
-    // 2. Tạo WorkSheet từ JSON
     const ws = XLSX.utils.json_to_sheet(exportData);
-
-    // 3. Tạo WorkBook và thêm Sheet vào
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "DanhSach");
-
-    // 4. Xuất file
     XLSX.writeFile(wb, filename);
 };
 
@@ -778,13 +770,12 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   const checkCondition = (row, filter) => {
       if (!filter.column || !filter.value) return true; 
-      // FIX LỖI: Dùng giá trị thô, không lowercase tại đây để tránh lệch pha với hàm removeVietnameseTones bên trong checkSmartMatch
-      const cellVal = String(row[filter.column] || ''); 
+      const cellVal = String(row[filter.column] || '').toLowerCase();
       const searchVals = String(filter.value).split(/[,;]+/).map(s => s.trim()).filter(s => s);
       
       return searchVals.some(searchVal => {
           switch (filter.condition) {
-              case 'contains': return checkSmartMatch(cellVal, searchVal); // Hàm thông minh tự lo lowercase + bỏ dấu
+              case 'contains': return checkSmartMatch(cellVal, searchVal); 
               case 'not_contains': return !checkSmartMatch(cellVal, searchVal);
               case 'equals': return cellVal.toLowerCase() === searchVal.toLowerCase();
               case 'not_equals': return cellVal.toLowerCase() !== searchVal.toLowerCase();
@@ -804,15 +795,12 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,;]+/); 
-      // Lọc bỏ rỗng và trùng lặp trong input
       const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim()).filter(s => s !== ''))];
       
       if (uniquePasteOrder.length > 0) {
           const rowMap = new Map();
           filtered.forEach(row => {
               const cellVal = String(row[targetCol]).trim(); 
-              // FIX LỖI: Dùng checkSmartMatch cho cả chế độ 'partial'
-              // Chế độ 'exact' vẫn so sánh cứng nhưng lowercase
               
               if (bulkFilterMode === 'exact') {
                   const cellValLower = cellVal.toLowerCase();
@@ -822,7 +810,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                       rowMap.get(key).push(row); 
                   }
               } else {
-                  // Partial: Dùng checkSmartMatch để tìm gần đúng thông minh
                   const matchedKey = uniquePasteOrder.find(searchKey => checkSmartMatch(cellVal, searchKey));
                   if (matchedKey) { 
                       const key = matchedKey.toLowerCase();
@@ -851,7 +838,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         return result;
     });
 
-    // CHỈNH SỬA QUAN TRỌNG: Chỉ hiện đúng các cột đã chọn (Nếu rỗng thì hiện rỗng)
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols, isExecuted: true });
     setCurrentPage(1); setSortRules([]); 
     setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
@@ -865,23 +851,13 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const handleUndo = () => { if (history.past.length === 0) return; const prev = history.past[history.past.length - 1]; setHistory({ past: history.past.slice(0, -1), future: [{ config: { ...queryConfig }, result: { ...resultState } }, ...history.future] }); setQueryConfig(prev.config); setResultState(prev.result); };
   const handleRedo = () => { if (history.future.length === 0) return; const next = history.future[0]; setHistory({ past: [...history.past, { config: { ...queryConfig }, result: { ...resultState } }], future: history.future.slice(1) }); setQueryConfig(next.config); setResultState(next.result); };
   
-  // LOGIC CLICK TRÊN MOBILE
   const handleCellClick = (r, c) => {
       if (!isMobileSelectMode) return;
-      
       if (selection.start.row === null || !selection.isDragging) {
-           setSelection({
-               start: { row: r, col: c },
-               end: { row: r, col: c },
-               isDragging: true 
-           });
+           setSelection({ start: { row: r, col: c }, end: { row: r, col: c }, isDragging: true });
            triggerToast("Hãy chạm vào ô cuối cùng để chọn vùng");
       } else {
-           setSelection(prev => ({
-               ...prev,
-               end: { row: r, col: c },
-               isDragging: false
-           }));
+           setSelection(prev => ({ ...prev, end: { row: r, col: c }, isDragging: false }));
       }
   };
 
@@ -1073,6 +1049,8 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                         <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap hidden md:inline">{resultState.data.length} dòng</span>
                         <button onClick={() => setIsSortModalOpen(true)} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><ListFilter size={16} /> Sort</button>
                         <button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> All</button>
+                        
+                        {/* FIX: GỌI ĐÚNG HÀM exportToExcel (MỚI) */}
                         <button onClick={() => exportToExcel(resultState.data, resultState.visibleCols, 'KetQua.xlsx')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
                      </div>
                  )}
@@ -1100,6 +1078,159 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       <ToastNotification message={toastMsg} isVisible={showToast} onClose={() => setShowToast(false)} />
     </div>
   );
+};
+
+// --- CHART COMPONENTS (Nâng cấp Stack/Segment + Controlled) ---
+const ChartCard = ({ config, data, onDelete, onUpdate }) => {
+    // Không dùng state nội bộ nữa, dùng props từ config
+    const type = config.type || 'bar';
+    const xAxis = config.x || '';
+    const segmentBy = config.segmentBy || '';
+    
+    const columns = Object.keys(data[0] || {});
+
+    // Helper update function
+    const updateConfig = (key, value) => {
+        onUpdate({ [key]: value });
+    };
+
+    // Logic xử lý dữ liệu phức tạp (Segment / Stack)
+    const processed = useMemo(() => {
+        const segments = segmentBy ? [...new Set(data.map(r => r[segmentBy] || 'N/A'))].sort() : ['count'];
+        const grouped = data.reduce((acc, row) => {
+            const xVal = row[xAxis] || 'N/A';
+            if (!acc[xVal]) {
+                acc[xVal] = { name: xVal };
+                segments.forEach(seg => acc[xVal][seg] = 0);
+            }
+            const segKey = segmentBy ? (row[segmentBy] || 'N/A') : 'count';
+            acc[xVal][segKey] += 1;
+            return acc;
+        }, {});
+
+        return {
+            data: Object.values(grouped).sort((a,b) => b.count - a.count).slice(0, 20),
+            keys: segments
+        };
+    }, [data, xAxis, segmentBy]);
+
+    const COLORS = ['#003366', '#FF8042', '#00C49F', '#FFBB28', '#FF4444', '#8884d8', '#82ca9d'];
+    
+    const renderContent = () => {
+        const Cmp = { bar: BarChart, line: LineChart, area: AreaChart, pie: PieChart }[type] || BarChart;
+        
+        if (type === 'pie') {
+             return (
+                <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie data={processed.data} dataKey={processed.keys[0]} nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{processed.data.map((e,i)=> <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie>
+                        <RechartsTooltip /><Legend />
+                    </PieChart>
+                </ResponsiveContainer>
+             );
+        }
+
+        return (
+            <ResponsiveContainer width="100%" height="100%">
+                <Cmp data={processed.data}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" height={60} tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end"/>
+                    <YAxis />
+                    <RechartsTooltip />
+                    <Legend />
+                    {processed.keys.map((key, idx) => {
+                        const color = COLORS[idx % COLORS.length];
+                        const props = { key, dataKey: key, fill: color, stroke: color, stackId: segmentBy ? 'a' : undefined, name: key === 'count' ? 'Số lượng' : key };
+                        if (type === 'bar') return <Bar {...props} />;
+                        if (type === 'line') return <Line type="monotone" {...props} strokeWidth={2} />;
+                        if (type === 'area') return <Area type="monotone" {...props} />;
+                        return <Bar {...props} />;
+                    })}
+                </Cmp>
+            </ResponsiveContainer>
+        );
+    };
+
+    return (
+        <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-96 flex flex-col">
+            <div className="flex flex-wrap justify-between items-center mb-4 border-b border-slate-100 pb-2 gap-2">
+                <div className="flex gap-2 items-center flex-1 overflow-x-auto">
+                    <select className="text-xs border rounded p-1 font-bold text-blue-900" value={type} onChange={e=>updateConfig('type', e.target.value)}><option value="bar">Cột</option><option value="line">Đường</option><option value="pie">Tròn</option><option value="area">Vùng</option></select>
+                    <span className="text-xs text-slate-400 whitespace-nowrap">Trục X:</span>
+                    <select className="text-xs border rounded p-1 max-w-[100px]" value={xAxis} onChange={e=>updateConfig('x', e.target.value)}>{columns.map(c=><option key={c} value={c}>{c}</option>)}</select>
+                    
+                    {type !== 'pie' && (
+                        <>
+                            <span className="text-xs text-slate-400 whitespace-nowrap flex items-center gap-1"><Split size={12}/> Chia theo:</span>
+                            <select className="text-xs border rounded p-1 max-w-[100px]" value={segmentBy} onChange={e=>updateConfig('segmentBy', e.target.value)}>
+                                <option value="">(Không)</option>
+                                {columns.map(c=><option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </>
+                    )}
+                </div>
+                <button onClick={onDelete} className="text-slate-300 hover:text-red-500"><X size={16}/></button>
+            </div>
+            <div className="flex-1 min-h-0 text-xs font-medium">{renderContent()}</div>
+        </motion.div>
+    );
+};
+
+// --- SUPER ANALYTICS DASHBOARD ---
+const SuperAnalytics = ({ data, charts, setCharts, onUpdate }) => {
+    if (!data || data.length === 0) return <div className="p-10 text-center text-slate-400">Chưa có dữ liệu. Vui lòng chạy truy vấn.</div>;
+    const columns = Object.keys(data[0]);
+
+    const addChart = (config) => setCharts(p => [...p, { id: Date.now(), ...config }]);
+    const removeChart = (id) => setCharts(p => p.filter(c => c.id !== id));
+
+    const templates = useMemo(() => {
+        const find = k => columns.find(c => c.toLowerCase().includes(k));
+        return [
+            { label: 'Trạng thái', x: find('trạng thái') || find('status') },
+            { label: 'Giới tính', x: find('giới tính') || find('phái'), type: 'pie' },
+            { label: 'Ngành học', x: find('ngành') || find('chương trình') },
+            { label: 'Lớp', x: find('lớp') },
+            { label: 'Khu vực', x: find('khu vực') },
+        ].filter(t => t.x);
+    }, [columns]);
+
+    return (
+        <div className="h-full flex flex-col bg-slate-50">
+            <div className="p-4 bg-white border-b border-slate-200">
+                <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase mr-2">Mẫu nhanh:</span>
+                    {templates.map(t => (
+                        <button key={t.label} onClick={() => addChart({ x: t.x, y: ['count'], type: t.type || 'bar' })} className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium hover:bg-blue-100 border border-blue-200 transition-colors">+ {t.label}</button>
+                    ))}
+                    <div className="h-6 w-px bg-slate-200 mx-2"></div>
+                    <button onClick={() => addChart({ x: columns[0], y: 'count', type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
+                    {charts.length > 0 && <button onClick={() => setCharts([])} className="ml-auto text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 size={16}/></button>}
+                </div>
+            </div>
+            
+            <div className="flex-1 p-6 overflow-y-auto">
+                {charts.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                        <BarChart3 size={48} className="mb-2 opacity-50"/>
+                        <p>Chọn mẫu biểu đồ ở trên để bắt đầu phân tích</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
+                        {charts.map(chart => (
+                            <ChartCard 
+                                key={chart.id} 
+                                config={chart} 
+                                data={data} 
+                                onDelete={() => removeChart(chart.id)} 
+                                onUpdate={(newData) => onUpdate(chart.id, newData)}
+                            />
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
 };
 
 export default function App() {
