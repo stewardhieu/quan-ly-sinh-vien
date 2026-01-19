@@ -88,7 +88,7 @@ const secureCopy = async (text) => {
     catch (err) { document.body.removeChild(textArea); return false; }
 };
 
-// HÀM XUẤT EXCEL MỚI (FIXED: Đã kiểm tra hoạt động)
+// HÀM XUẤT EXCEL MỚI (CHUẨN .XLSX)
 const exportToExcel = (data, columns, filename) => {
     if (!data || data.length === 0) {
         alert("Không có dữ liệu để xuất!");
@@ -778,16 +778,17 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   const checkCondition = (row, filter) => {
       if (!filter.column || !filter.value) return true; 
-      const cellVal = String(row[filter.column] || '').toLowerCase();
-      const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
+      // FIX LỖI: Dùng giá trị thô, không lowercase tại đây để tránh lệch pha với hàm removeVietnameseTones bên trong checkSmartMatch
+      const cellVal = String(row[filter.column] || ''); 
+      const searchVals = String(filter.value).split(/[,;]+/).map(s => s.trim()).filter(s => s);
       
       return searchVals.some(searchVal => {
           switch (filter.condition) {
-              case 'contains': return checkSmartMatch(cellVal, searchVal); 
+              case 'contains': return checkSmartMatch(cellVal, searchVal); // Hàm thông minh tự lo lowercase + bỏ dấu
               case 'not_contains': return !checkSmartMatch(cellVal, searchVal);
-              case 'equals': return cellVal === searchVal;
-              case 'not_equals': return cellVal !== searchVal;
-              case 'starts': return cellVal.startsWith(searchVal);
+              case 'equals': return cellVal.toLowerCase() === searchVal.toLowerCase();
+              case 'not_equals': return cellVal.toLowerCase() !== searchVal.toLowerCase();
+              case 'starts': return cellVal.toLowerCase().startsWith(searchVal.toLowerCase());
               case 'greater': return parseFloat(cellVal) >= parseFloat(searchVal);
               case 'less': return parseFloat(cellVal) <= parseFloat(searchVal);
               default: return true;
@@ -803,21 +804,25 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,;]+/); 
+      // Lọc bỏ rỗng và trùng lặp trong input
       const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim()).filter(s => s !== ''))];
       
       if (uniquePasteOrder.length > 0) {
           const rowMap = new Map();
           filtered.forEach(row => {
               const cellVal = String(row[targetCol]).trim(); 
-              const cellValLower = cellVal.toLowerCase();
-
+              // FIX LỖI: Dùng checkSmartMatch cho cả chế độ 'partial'
+              // Chế độ 'exact' vẫn so sánh cứng nhưng lowercase
+              
               if (bulkFilterMode === 'exact') {
+                  const cellValLower = cellVal.toLowerCase();
                   if (uniquePasteOrder.some(val => val.toLowerCase() === cellValLower)) {
                       const key = uniquePasteOrder.find(val => val.toLowerCase() === cellValLower).toLowerCase();
                       if (!rowMap.has(key)) rowMap.set(key, []); 
                       rowMap.get(key).push(row); 
                   }
               } else {
+                  // Partial: Dùng checkSmartMatch để tìm gần đúng thông minh
                   const matchedKey = uniquePasteOrder.find(searchKey => checkSmartMatch(cellVal, searchKey));
                   if (matchedKey) { 
                       const key = matchedKey.toLowerCase();
@@ -846,6 +851,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         return result;
     });
 
+    // CHỈNH SỬA QUAN TRỌNG: Chỉ hiện đúng các cột đã chọn (Nếu rỗng thì hiện rỗng)
     setResultState({ data: filtered, visibleCols: queryConfig.selectedCols, isExecuted: true });
     setCurrentPage(1); setSortRules([]); 
     setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
