@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
+import * as XLSX from 'xlsx'; // IMPORT THƯ VIỆN EXCEL MỚI
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, AreaChart, Area,
@@ -10,7 +11,7 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, ArrowUpDown, ArrowUp, ArrowDown,
-  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, AlertCircle, ClipboardCheck, CloudCog
+  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, AlertCircle, ClipboardCheck, CloudCog, MousePointer2
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -26,7 +27,33 @@ const formatValue = (value) => {
   return String(value);
 };
 
-// Component thông báo Copy thành công
+const removeVietnameseTones = (str) => {
+    str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g,"a"); 
+    str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g,"e"); 
+    str = str.replace(/ì|í|ị|ỉ|ĩ/g,"i"); 
+    str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g,"o"); 
+    str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g,"u"); 
+    str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g,"y"); 
+    str = str.replace(/đ/g,"d");
+    str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
+    str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
+    str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
+    str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
+    str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
+    str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "Y");
+    str = str.replace(/Đ/g, "D");
+    return str;
+}
+
+const checkSmartMatch = (target, search) => {
+    if (!target) return false;
+    if (!search) return true;
+    const targetStr = removeVietnameseTones(String(target).toLowerCase());
+    const searchStr = removeVietnameseTones(String(search).toLowerCase());
+    const keywords = searchStr.split(/[\s,]+/).filter(k => k.trim() !== '');
+    return keywords.every(kw => targetStr.includes(kw));
+};
+
 const ToastNotification = ({ message, isVisible, onClose }) => {
     return (
         <AnimatePresence>
@@ -35,7 +62,7 @@ const ToastNotification = ({ message, isVisible, onClose }) => {
                     initial={{ opacity: 0, y: 50, scale: 0.9 }} 
                     animate={{ opacity: 1, y: 0, scale: 1 }} 
                     exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                    className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 z-50"
+                    className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 z-50 whitespace-nowrap"
                 >
                     <ClipboardCheck className="text-green-400" size={20} />
                     <span className="text-sm font-medium">{message}</span>
@@ -61,32 +88,29 @@ const secureCopy = async (text) => {
     catch (err) { document.body.removeChild(textArea); return false; }
 };
 
-const exportToExcelXML = (data, columns, filename) => {
-  const xmlHeader = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:html="http://www.w3.org/TR/REC-html40"><Styles><Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Bottom"/><Borders/><Font ss:FontName="Arial" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/><Interior/><NumberFormat/><Protection/></Style><Style ss:ID="sHeader"><Font ss:FontName="Arial" x:Family="Swiss" ss:Size="11" ss:Color="#FFFFFF" ss:Bold="1"/><Interior ss:Color="#003366" ss:Pattern="Solid"/></Style><Style ss:ID="sText"><NumberFormat ss:Format="@"/></Style></Styles><Worksheet ss:Name="Sheet1"><Table>`;
-  const xmlFooter = `</Table></Worksheet></Workbook>`;
-  let xmlBody = '<Row>';
-  columns.forEach(col => { xmlBody += `<Cell ss:StyleID="sHeader"><Data ss:Type="String">${col}</Data></Cell>`; });
-  xmlBody += '</Row>';
-  data.forEach(row => {
-    xmlBody += '<Row>';
-    columns.forEach(col => {
-      let val = row[col] !== undefined && row[col] !== null ? row[col] : '';
-      val = String(val).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      xmlBody += `<Cell ss:StyleID="sText"><Data ss:Type="String">${val}</Data></Cell>`;
+// HÀM XUẤT EXCEL MỚI (Dùng thư viện xlsx)
+const exportToExcel = (data, columns, filename) => {
+    // 1. Chỉ lọc lấy các cột đang hiển thị
+    const exportData = data.map(row => {
+        const newRow = {};
+        columns.forEach(col => {
+            newRow[col] = row[col];
+        });
+        return newRow;
     });
-    xmlBody += '</Row>';
-  });
-  const blob = new Blob([xmlHeader + xmlBody + xmlFooter], { type: 'application/vnd.ms-excel' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+
+    // 2. Tạo WorkSheet từ JSON
+    const ws = XLSX.utils.json_to_sheet(exportData);
+
+    // 3. Tạo WorkBook và thêm Sheet vào
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+
+    // 4. Xuất file (Tự động tải xuống)
+    XLSX.writeFile(wb, filename);
 };
 
-// --- COMPONENT: POPUP CHỌN CỘT ---
+// --- MODALS ---
 const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Chọn cột dữ liệu" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const inputRef = useRef(null);
@@ -114,7 +138,6 @@ const ColumnSelectorModal = ({ isOpen, onClose, columns, onSelect, title = "Ch�
     );
 };
 
-// --- COMPONENT: POPUP ĐA CHỌN GIÁ TRỊ ---
 const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave, title = "Chọn giá trị" }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const [selected, setSelected] = useState(new Set());
@@ -193,7 +216,6 @@ const MultiValueSelectModal = ({ isOpen, onClose, options, initialValue, onSave,
     );
 };
 
-// --- COMPONENT: ADVANCED SORT MODAL ---
 const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => {
     const [localRules, setLocalRules] = useState(sortRules || []);
 
@@ -419,14 +441,12 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
         date: new Date().toLocaleDateString('vi-VN')
     };
 
-    // Tạo lịch sử mới (đưa item mới lên đầu)
     const newHistory = [newItem, ...history.filter(h => h.key !== uniqueKey)].slice(0, 20);
     setHistory(newHistory);
     localStorage.setItem('sheet_history_v2', JSON.stringify(newHistory));
     updateCloudHistory(newHistory);
     
     setChecking(false);
-    // QUAN TRỌNG: Truyền tên mới sang Dashboard để nó ghi đè lên Sheet
     onConfig(cleanId, cleanRange, newItem.name);
   };
 
@@ -550,6 +570,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [sortRules, setSortRules] = useState([]); 
   const [isSortModalOpen, setIsSortModalOpen] = useState(false);
 
+  // STATE MOBILE SELECT
+  const [isMobileSelectMode, setIsMobileSelectMode] = useState(false);
+
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
 
@@ -670,10 +693,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
               const savedConfig = JSON.parse(rows[0][0]);
               if (savedConfig.charts) setCharts(savedConfig.charts);
               if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
-              
-              // ĐÃ XÓA LOGIC ĐỒNG BỘ NGƯỢC "NGUY HIỂM" TẠI ĐÂY
-              // Để tránh việc tên cũ trên sheet ghi đè tên mới vừa đặt ở SetupScreen
-              
               console.log("Đã tải cấu hình từ Sheet thành công.");
           }
       } catch (error) {
@@ -755,16 +774,17 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   const checkCondition = (row, filter) => {
       if (!filter.column || !filter.value) return true; 
-      const cellVal = String(row[filter.column] || '').toLowerCase();
-      const searchVals = String(filter.value).toLowerCase().split(/[,;]+/).map(s => s.trim()).filter(s => s);
+      // FIX LỖI: Dùng giá trị thô, không lowercase tại đây để tránh lệch pha với hàm removeVietnameseTones bên trong checkSmartMatch
+      const cellVal = String(row[filter.column] || ''); 
+      const searchVals = String(filter.value).split(/[,;]+/).map(s => s.trim()).filter(s => s);
       
       return searchVals.some(searchVal => {
           switch (filter.condition) {
-              case 'contains': return cellVal.includes(searchVal);
-              case 'not_contains': return !cellVal.includes(searchVal);
-              case 'equals': return cellVal === searchVal;
-              case 'not_equals': return cellVal !== searchVal;
-              case 'starts': return cellVal.startsWith(searchVal);
+              case 'contains': return checkSmartMatch(cellVal, searchVal); // Hàm thông minh tự lo lowercase + bỏ dấu
+              case 'not_contains': return !checkSmartMatch(cellVal, searchVal);
+              case 'equals': return cellVal.toLowerCase() === searchVal.toLowerCase();
+              case 'not_equals': return cellVal.toLowerCase() !== searchVal.toLowerCase();
+              case 'starts': return cellVal.toLowerCase().startsWith(searchVal.toLowerCase());
               case 'greater': return parseFloat(cellVal) >= parseFloat(searchVal);
               case 'less': return parseFloat(cellVal) <= parseFloat(searchVal);
               default: return true;
@@ -780,20 +800,38 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
       const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,;]+/); 
-      const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim().toLowerCase()).filter(s => s !== ''))];
+      // Lọc bỏ rỗng và trùng lặp trong input
+      const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim()).filter(s => s !== ''))];
       
       if (uniquePasteOrder.length > 0) {
           const rowMap = new Map();
           filtered.forEach(row => {
-              const cellVal = String(row[targetCol]).trim().toLowerCase();
+              const cellVal = String(row[targetCol]).trim(); 
+              // FIX LỖI: Dùng checkSmartMatch cho cả chế độ 'partial'
+              // Chế độ 'exact' vẫn so sánh cứng nhưng lowercase
+              
               if (bulkFilterMode === 'exact') {
-                  if (uniquePasteOrder.includes(cellVal)) { if (!rowMap.has(cellVal)) rowMap.set(cellVal, []); rowMap.get(cellVal).push(row); }
+                  const cellValLower = cellVal.toLowerCase();
+                  if (uniquePasteOrder.some(val => val.toLowerCase() === cellValLower)) {
+                      const key = uniquePasteOrder.find(val => val.toLowerCase() === cellValLower).toLowerCase();
+                      if (!rowMap.has(key)) rowMap.set(key, []); 
+                      rowMap.get(key).push(row); 
+                  }
               } else {
-                  const matchedKey = uniquePasteOrder.find(k => cellVal.includes(k));
-                  if (matchedKey) { if (!rowMap.has(matchedKey)) rowMap.set(matchedKey, []); rowMap.get(matchedKey).push(row); }
+                  // Partial: Dùng checkSmartMatch để tìm gần đúng thông minh
+                  const matchedKey = uniquePasteOrder.find(searchKey => checkSmartMatch(cellVal, searchKey));
+                  if (matchedKey) { 
+                      const key = matchedKey.toLowerCase();
+                      if (!rowMap.has(key)) rowMap.set(key, []); 
+                      rowMap.get(key).push(row); 
+                  }
               }
           });
-          uniquePasteOrder.forEach(val => { if (rowMap.has(val)) orderedData.push(...rowMap.get(val)); });
+          
+          uniquePasteOrder.forEach(val => { 
+              const key = val.toLowerCase();
+              if (rowMap.has(key)) orderedData.push(...rowMap.get(key)); 
+          });
           filtered = orderedData;
       }
     }
@@ -809,7 +847,8 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         return result;
     });
 
-    setResultState({ data: filtered, visibleCols: queryConfig.selectedCols.length > 0 ? queryConfig.selectedCols : allColumns, isExecuted: true });
+    // CHỈNH SỬA QUAN TRỌNG: Chỉ hiện đúng các cột đã chọn (Nếu rỗng thì hiện rỗng)
+    setResultState({ data: filtered, visibleCols: queryConfig.selectedCols, isExecuted: true });
     setCurrentPage(1); setSortRules([]); 
     setView('table'); if (window.innerWidth < 768) setIsQueryBuilderOpen(false);
   };
@@ -821,9 +860,31 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   const handleUndo = () => { if (history.past.length === 0) return; const prev = history.past[history.past.length - 1]; setHistory({ past: history.past.slice(0, -1), future: [{ config: { ...queryConfig }, result: { ...resultState } }, ...history.future] }); setQueryConfig(prev.config); setResultState(prev.result); };
   const handleRedo = () => { if (history.future.length === 0) return; const next = history.future[0]; setHistory({ past: [...history.past, { config: { ...queryConfig }, result: { ...resultState } }], future: history.future.slice(1) }); setQueryConfig(next.config); setResultState(next.result); };
-  const handleMouseDown = (r, c) => setSelection({ start: { row: r, col: c }, end: { row: r, col: c }, isDragging: true });
-  const handleMouseEnter = (r, c) => { if (selection.isDragging) setSelection(prev => ({ ...prev, end: { row: r, col: c } })); };
-  useEffect(() => { const up = () => { if (selection.isDragging) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging]);
+  
+  // LOGIC CLICK TRÊN MOBILE
+  const handleCellClick = (r, c) => {
+      if (!isMobileSelectMode) return;
+      
+      if (selection.start.row === null || !selection.isDragging) {
+           setSelection({
+               start: { row: r, col: c },
+               end: { row: r, col: c },
+               isDragging: true 
+           });
+           triggerToast("Hãy chạm vào ô cuối cùng để chọn vùng");
+      } else {
+           setSelection(prev => ({
+               ...prev,
+               end: { row: r, col: c },
+               isDragging: false
+           }));
+      }
+  };
+
+  const handleMouseDown = (r, c) => { if (!isMobileSelectMode) setSelection({ start: { row: r, col: c }, end: { row: r, col: c }, isDragging: true }); };
+  const handleMouseEnter = (r, c) => { if (selection.isDragging && !isMobileSelectMode) setSelection(prev => ({ ...prev, end: { row: r, col: c } })); };
+  useEffect(() => { const up = () => { if (selection.isDragging && !isMobileSelectMode) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging, isMobileSelectMode]);
+  
   const getSelectionRange = useCallback(() => { const { start, end } = selection; if (start.row === null) return null; return { minR: Math.min(start.row, end.row), maxR: Math.max(start.row, end.row), minC: Math.min(start.col, end.col), maxC: Math.max(start.col, end.col) }; }, [selection]);
   const handleCopyAll = () => { if (!resultState.data.length) return; const headers = resultState.visibleCols.join('\t'); const body = resultState.data.map(row => resultState.visibleCols.map(col => formatValue(row[col])).join('\t')).join('\n'); secureCopy(`${headers}\n${body}`).then(() => triggerToast(`Đã copy toàn bộ ${resultState.data.length} dòng!`)); };
   
@@ -947,10 +1008,16 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                             </div>
                         </div>
                         <div className="flex flex-col gap-2">
-                            <div className="flex justify-between items-center"><span className="text-xs font-semibold uppercase text-slate-500">Điều kiện chi tiết</span><button onClick={addFilterCondition} className="text-xs flex items-center gap-1 text-blue-700 hover:bg-blue-50 px-2 py-1 rounded transition-colors"><Plus size={14} /> Thêm điều kiện</button></div>
+                            {/* FIX LAYOUT MOBILE: Dùng flex-wrap và padding phù hợp */}
+                            <div className="flex justify-between items-center bg-slate-100 p-2 rounded">
+                                <span className="text-xs font-semibold uppercase text-slate-500">Điều kiện chi tiết</span>
+                                <button onClick={addFilterCondition} className="text-xs flex items-center gap-1 bg-blue-900 text-white px-3 py-1.5 rounded hover:bg-blue-800 shadow-sm transition-transform active:scale-95">
+                                    <Plus size={14} /> <span className="font-medium">Thêm điều kiện</span>
+                                </button>
+                            </div>
                             <div className="max-h-48 overflow-y-auto pr-1 space-y-2">
                                 {queryConfig.filters.map((filter, idx) => (
-                                    <div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0">
+                                    <div key={filter.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center text-sm border-b md:border-none border-slate-100 pb-2 md:pb-0 bg-white p-2 rounded">
                                         <div className="flex items-center gap-1">{idx > 0 ? (<select className="border border-slate-300 bg-slate-100 rounded px-1 py-2 text-xs font-bold w-16" value={filter.operator} onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}><option value="AND">VÀ</option><option value="OR">HOẶC</option></select>) : <span className="text-slate-400 font-mono text-xs w-16 text-center">Bắt đầu</span>}</div>
                                         <div onClick={() => openColumnModal('filter', filter.id)} className="flex-1 border border-slate-300 rounded px-3 py-2 cursor-pointer hover:border-blue-500 bg-white flex justify-between items-center"><span className={`truncate ${!filter.column ? 'text-slate-400' : 'text-slate-800'}`}>{filter.column || "(Chọn cột)"}</span><ChevronDown size={14} className="text-slate-400"/></div>
                                         <select className="border border-slate-300 rounded px-2 py-2 w-full md:w-1/4" value={filter.condition} onChange={(e) => updateFilter(filter.id, 'condition', e.target.value)}><option value="contains">Chứa</option><option value="not_contains">Không chứa</option><option value="equals">Bằng tuyệt đối</option><option value="not_equals">Khác</option><option value="starts">Bắt đầu với</option><option value="greater">Lớn hơn</option><option value="less">Nhỏ hơn</option></select>
@@ -979,12 +1046,29 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
         <div className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
             <div className="flex flex-wrap gap-2 justify-between items-center px-4 pt-2 border-b border-slate-200 bg-slate-50">
                  <div className="flex gap-2"><button onClick={() => setView('table')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'table' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><TableIcon size={16} /> Kết Quả</button><button onClick={() => setView('analytics')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'analytics' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><ChartIcon size={16} /> Phân tích</button></div>
+                 
+                 {/* FIX MOBILE: Ẩn bớt nút trên mobile để đỡ rối, hoặc gom nhóm */}
                  {resultState.isExecuted && view === 'table' && (
-                     <div className="flex items-center gap-2 pb-1 overflow-x-auto">
-                        <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap">{resultState.data.length} dòng</span>
+                     <div className="flex items-center gap-2 pb-1 overflow-x-auto no-scrollbar">
+                        {/* TOGGLE MOBILE SELECT */}
+                        <button 
+                            onClick={() => setIsMobileSelectMode(!isMobileSelectMode)} 
+                            className={`flex items-center gap-1 text-xs md:text-sm font-medium whitespace-nowrap px-2 py-1 rounded transition-colors ${isMobileSelectMode ? 'bg-green-100 text-green-700 border border-green-300' : 'text-slate-600 hover:text-blue-900 bg-slate-100'}`}
+                        >
+                            <MousePointer2 size={16} /> {isMobileSelectMode ? 'Bật chọn' : 'Tắt chọn'}
+                        </button>
+
                         <div className="h-4 w-px bg-slate-300"></div>
-                        <button onClick={() => setIsSortModalOpen(true)} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><ListFilter size={16} /> Advanced Sort</button>
-                        <button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> Copy Toàn bộ</button>
+                        
+                        {selection.start.row !== null && (
+                            <button onClick={handleCopy} className="flex items-center gap-1 text-xs md:text-sm text-blue-700 bg-blue-50 px-2 py-1 rounded hover:bg-blue-100 font-bold whitespace-nowrap animate-pulse">
+                                <Copy size={16} /> Copy vùng
+                            </button>
+                        )}
+
+                        <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap hidden md:inline">{resultState.data.length} dòng</span>
+                        <button onClick={() => setIsSortModalOpen(true)} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><ListFilter size={16} /> Sort</button>
+                        <button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> All</button>
                         <button onClick={() => exportToExcelXML(resultState.data, resultState.visibleCols, 'KetQua.xls')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
                      </div>
                  )}
@@ -993,7 +1077,11 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                 {!resultState.isExecuted ? (<div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 p-4 text-center"><Search size={64} className="mb-4 opacity-20" /><p className="text-lg font-medium">Vui lòng thiết lập điều kiện và chạy truy vấn</p></div>) : (
                     view === 'table' ? (
                         <>
-                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} onClick={() => handleQuickSort(col)} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors cursor-pointer" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden"><span className="truncate" title={col}>{col}</span>{sortRules.length > 0 && sortRules[0].column === col ? (sortRules[0].direction === 'asc' ? <ArrowUp size={12} className="text-blue-600"/> : <ArrowDown size={12} className="text-blue-600"/>) : <ArrowUpDown size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />}</div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} onClick={(e) => e.stopPropagation()}/></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} onMouseDown={() => handleMouseDown(rIdx, cIdx)} onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
+                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} onClick={() => handleQuickSort(col)} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors cursor-pointer" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden"><span className="truncate" title={col}>{col}</span>{sortRules.length > 0 && sortRules[0].column === col ? (sortRules[0].direction === 'asc' ? <ArrowUp size={12} className="text-blue-600"/> : <ArrowDown size={12} className="text-blue-600"/>) : <ArrowUpDown size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />}</div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} onClick={(e) => e.stopPropagation()}/></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} 
+                                onClick={() => handleCellClick(rIdx, cIdx)}
+                                onMouseDown={() => handleMouseDown(rIdx, cIdx)} 
+                                onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} 
+                                className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
                             <div className="bg-white border-t border-slate-200 p-2 flex justify-between items-center"><div className="flex items-center gap-2"><span className="text-xs text-slate-500">Hiển thị:</span><select className="text-xs border border-slate-300 rounded p-1" value={itemsPerPage} onChange={(e) => handleItemsPerPageChange(e.target.value)}><option value="50">50 dòng</option><option value="100">100 dòng</option><option value="500">500 dòng</option><option value="1000">1000 dòng</option><option value="all">Tất cả</option></select><span className="text-xs text-slate-500 ml-2">{itemsPerPage !== 'all' ? `${(currentPage - 1) * itemsPerPage + 1} - ${Math.min(currentPage * itemsPerPage, sortedData.length)} / ${sortedData.length}` : `Toàn bộ ${sortedData.length} dòng`}</span></div>{itemsPerPage !== 'all' && (<div className="flex gap-2"><button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowLeft size={16}/></button><button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowRight size={16}/></button></div>)}</div>
                         </>
                     ) : ( <SuperAnalytics data={resultState.data} charts={charts} setCharts={setCharts} onUpdate={updateChart} /> )
@@ -1008,102 +1096,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       <ToastNotification message={toastMsg} isVisible={showToast} onClose={() => setShowToast(false)} />
     </div>
   );
-};
-
-// --- CHART COMPONENTS (Nâng cấp Stack/Segment + Controlled) ---
-const ChartCard = ({ config, data, onDelete, onUpdate }) => {
-    // Không dùng state nội bộ nữa, dùng props từ config
-    const type = config.type || 'bar';
-    const xAxis = config.x || '';
-    const segmentBy = config.segmentBy || '';
-    
-    const columns = Object.keys(data[0] || {});
-
-    // Helper update function
-    const updateConfig = (key, value) => {
-        onUpdate({ [key]: value });
-    };
-
-    // Logic xử lý dữ liệu phức tạp (Segment / Stack)
-    const processed = useMemo(() => {
-        const segments = segmentBy ? [...new Set(data.map(r => r[segmentBy] || 'N/A'))].sort() : ['count'];
-        const grouped = data.reduce((acc, row) => {
-            const xVal = row[xAxis] || 'N/A';
-            if (!acc[xVal]) {
-                acc[xVal] = { name: xVal };
-                segments.forEach(seg => acc[xVal][seg] = 0);
-            }
-            const segKey = segmentBy ? (row[segmentBy] || 'N/A') : 'count';
-            acc[xVal][segKey] += 1;
-            return acc;
-        }, {});
-
-        return {
-            data: Object.values(grouped).sort((a,b) => b.count - a.count).slice(0, 20),
-            keys: segments
-        };
-    }, [data, xAxis, segmentBy]);
-
-    const COLORS = ['#003366', '#FF8042', '#00C49F', '#FFBB28', '#FF4444', '#8884d8', '#82ca9d'];
-    
-    const renderContent = () => {
-        const Cmp = { bar: BarChart, line: LineChart, area: AreaChart, pie: PieChart }[type] || BarChart;
-        
-        if (type === 'pie') {
-             return (
-                <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie data={processed.data} dataKey={processed.keys[0]} nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{processed.data.map((e,i)=> <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie>
-                        <RechartsTooltip /><Legend />
-                    </PieChart>
-                </ResponsiveContainer>
-             );
-        }
-
-        return (
-            <ResponsiveContainer width="100%" height="100%">
-                <Cmp data={processed.data}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" height={60} tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end"/>
-                    <YAxis />
-                    <RechartsTooltip />
-                    <Legend />
-                    {processed.keys.map((key, idx) => {
-                        const color = COLORS[idx % COLORS.length];
-                        const props = { key, dataKey: key, fill: color, stroke: color, stackId: segmentBy ? 'a' : undefined, name: key === 'count' ? 'Số lượng' : key };
-                        if (type === 'bar') return <Bar {...props} />;
-                        if (type === 'line') return <Line type="monotone" {...props} strokeWidth={2} />;
-                        if (type === 'area') return <Area type="monotone" {...props} />;
-                        return <Bar {...props} />;
-                    })}
-                </Cmp>
-            </ResponsiveContainer>
-        );
-    };
-
-    return (
-        <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-96 flex flex-col">
-            <div className="flex flex-wrap justify-between items-center mb-4 border-b border-slate-100 pb-2 gap-2">
-                <div className="flex gap-2 items-center flex-1 overflow-x-auto">
-                    <select className="text-xs border rounded p-1 font-bold text-blue-900" value={type} onChange={e=>updateConfig('type', e.target.value)}><option value="bar">Cột</option><option value="line">Đường</option><option value="pie">Tròn</option><option value="area">Vùng</option></select>
-                    <span className="text-xs text-slate-400 whitespace-nowrap">Trục X:</span>
-                    <select className="text-xs border rounded p-1 max-w-[100px]" value={xAxis} onChange={e=>updateConfig('x', e.target.value)}>{columns.map(c=><option key={c} value={c}>{c}</option>)}</select>
-                    
-                    {type !== 'pie' && (
-                        <>
-                            <span className="text-xs text-slate-400 whitespace-nowrap flex items-center gap-1"><Split size={12}/> Chia theo:</span>
-                            <select className="text-xs border rounded p-1 max-w-[100px]" value={segmentBy} onChange={e=>updateConfig('segmentBy', e.target.value)}>
-                                <option value="">(Không)</option>
-                                {columns.map(c=><option key={c} value={c}>{c}</option>)}
-                            </select>
-                        </>
-                    )}
-                </div>
-                <button onClick={onDelete} className="text-slate-300 hover:text-red-500"><X size={16}/></button>
-            </div>
-            <div className="flex-1 min-h-0 text-xs font-medium">{renderContent()}</div>
-        </motion.div>
-    );
 };
 
 export default function App() {
