@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
-import * as XLSX from 'xlsx'; // Import thư viện Excel
+import * as XLSX from 'xlsx'; 
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, AreaChart, Area,
@@ -11,7 +11,7 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, ArrowUpDown, ArrowUp, ArrowDown,
-  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, AlertCircle, ClipboardCheck, CloudCog, MousePointer2
+  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, AlertCircle, ClipboardCheck, CloudCog, MousePointer2, LogIn
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -280,6 +280,7 @@ const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => 
 
 const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
+  
   const login = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setLoading(true);
@@ -287,11 +288,16 @@ const LoginScreen = ({ onLoginSuccess }) => {
         const userInfo = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
         });
+        
+        // TÍNH TOÁN THỜI GIAN HẾT HẠN (Mặc định 1h = 3600s, trừ hao 100s cho an toàn)
+        const expiresAt = Date.now() + (tokenResponse.expires_in || 3599) * 1000 - 100000;
+
         const userData = {
             name: userInfo.data.name,
             email: userInfo.data.email,
             imageUrl: userInfo.data.picture,
-            accessToken: tokenResponse.access_token 
+            accessToken: tokenResponse.access_token,
+            expiresAt: expiresAt // LƯU THỜI GIAN HẾT HẠN
         };
         localStorage.setItem('pka_user_session', JSON.stringify(userData));
         onLoginSuccess(userData);
@@ -384,7 +390,8 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
 
     } catch (error) {
         console.error("Lỗi đồng bộ lịch sử Drive:", error);
-        if (error.response && error.response.status === 403) {
+        // PHÁT HIỆN LỖI 401/403 Ở ĐÂY ĐỂ BÁO HẾT HẠN
+        if (error.response && (error.response.status === 403 || error.response.status === 401)) {
             setDrivePermissionError(true);
         }
     }
@@ -419,8 +426,7 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
     } catch (error) {
         setChecking(false);
         if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-            alert("Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập Sheet này. Vui lòng đăng nhập lại.");
-            onLogout();
+            setDrivePermissionError(true); // Kích hoạt UI hết hạn
             return;
         } else {
              alert("Không thể tìm thấy ID Sheet này. Vui lòng kiểm tra lại.");
@@ -504,20 +510,21 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
         <div className="mt-6 pt-4 border-t border-slate-100">
             <div className="flex justify-between items-center mb-3">
                 <p className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1"><History size={12}/> Lịch sử truy cập</p>
-                {syncingHistory && <span className="text-xs text-blue-500 flex items-center gap-1"><RefreshCw size={10} className="animate-spin"/> Đang đồng bộ từ Drive...</span>}
+                {syncingHistory && <span className="text-xs text-blue-500 flex items-center gap-1"><RefreshCw size={10} className="animate-spin"/> Đang đồng bộ...</span>}
             </div>
 
+            {/* UI BÁO HẾT PHIÊN - CLICK ĐỂ LOGIN LẠI NGAY */}
             {drivePermissionError && (
-                <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800 flex items-start gap-2">
-                    <AlertCircle size={16} className="shrink-0 mt-0.5"/>
-                    <div>
-                        <span className="font-bold">Chưa đồng bộ được lịch sử:</span> Bạn cần cấp thêm quyền Google Drive. <br/>
-                        <button onClick={onLogout} className="underline text-blue-700 font-bold mt-1">Bấm vào đây để Đăng xuất & Đăng nhập lại</button>
-                    </div>
+                <div className="mb-3 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 flex flex-col items-center text-center gap-2">
+                    <div className="flex items-center gap-2 font-bold"><AlertCircle size={18}/> Phiên làm việc hết hạn</div>
+                    <p className="text-xs">Để đảm bảo bảo mật, Google yêu cầu xác thực lại sau mỗi giờ.</p>
+                    <button onClick={onLogout} className="mt-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold flex items-center gap-2 transition-colors">
+                        <LogIn size={16}/> Đăng nhập lại ngay
+                    </button>
                 </div>
             )}
             
-            {history.length > 0 ? (
+            {!drivePermissionError && history.length > 0 && (
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                     {history.map((h) => (
                         <div key={h.key} onClick={() => useHistoryItem(h)} className={`group relative p-3 bg-slate-50 hover:bg-blue-50 rounded-lg cursor-pointer border transition-all ${sheetId === h.id && range === h.range ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
@@ -538,7 +545,9 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
                         </div>
                     ))}
                 </div>
-            ) : (
+            )}
+            
+            {!drivePermissionError && history.length === 0 && (
                 <div className="text-center text-slate-400 text-xs py-4">Chưa có dữ liệu nào.</div>
             )}
         </div>
@@ -926,6 +935,13 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       return <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle2 size={12}/> Đã lưu</span>;
   };
 
+  // CHECK TOKEN EXPIRED ON LOAD
+  useEffect(() => {
+    if (user && user.expiresAt && Date.now() > user.expiresAt) {
+      onLogout(); // Tự động logout nếu đã hết hạn
+    }
+  }, [user]);
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
       <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
@@ -1049,8 +1065,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                         <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap hidden md:inline">{resultState.data.length} dòng</span>
                         <button onClick={() => setIsSortModalOpen(true)} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><ListFilter size={16} /> Sort</button>
                         <button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> All</button>
-                        
-                        {/* FIX: GỌI ĐÚNG HÀM exportToExcel (MỚI) */}
                         <button onClick={() => exportToExcel(resultState.data, resultState.visibleCols, 'KetQua.xlsx')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
                      </div>
                  )}
