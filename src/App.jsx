@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
-import * as XLSX from 'xlsx'; 
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, AreaChart, Area,
@@ -11,7 +11,7 @@ import {
   Search, RefreshCw, Undo, Redo, LayoutTemplate, Table as TableIcon, PieChart as ChartIcon, 
   Settings, LogOut, FileSpreadsheet, Check, Filter, List, Copy, Play, X, Plus, Trash2, ChevronDown, 
   GripVertical, ChevronUp, History, Database, ArrowLeft, ArrowRight, BarChart3, ArrowUpDown, ArrowUp, ArrowDown,
-  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, AlertCircle, ClipboardCheck, CloudCog, MousePointer2, LogIn
+  CheckCircle2, CheckSquare, Square, Split, ListFilter, RotateCcw, UploadCloud, Cloud, Pencil, Save, AlertCircle, ClipboardCheck, CloudCog, MousePointer2, Calculator
 } from 'lucide-react';
 
 // --- CẤU HÌNH ---
@@ -276,11 +276,58 @@ const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => 
     );
 };
 
+// --- KPI COMPONENT (MỚI) ---
+const KPIWidget = ({ config, data, onDelete, onUpdate, columns }) => {
+    // Logic tính toán KPI
+    const result = useMemo(() => {
+        if (!data || !data.length) return { value: 0, suffix: '' };
+        
+        const { column, operation, targetValue } = config;
+        const validValues = data.map(r => r[column]).filter(v => v !== undefined && v !== '');
+
+        if (operation === 'avg') {
+            const sum = validValues.reduce((a, b) => a + (parseFloat(b) || 0), 0);
+            return { value: validValues.length ? (sum / validValues.length).toFixed(2) : 0, suffix: '' };
+        }
+        
+        if (operation === 'count_match' || operation === 'percent_match') {
+            const matches = data.filter(row => {
+                const cellVal = row[column];
+                if (!isNaN(parseFloat(targetValue))) { // So sánh số
+                     return parseFloat(cellVal) < parseFloat(targetValue); // Mặc định là nhỏ hơn (cảnh báo)
+                }
+                return String(cellVal).toLowerCase().includes(String(targetValue).toLowerCase());
+            }).length;
+
+            if (operation === 'percent_match') {
+                return { value: ((matches / data.length) * 100).toFixed(1), suffix: '%' };
+            }
+            return { value: matches, suffix: 'SV' };
+        }
+        
+        return { value: 0, suffix: '' };
+    }, [data, config]);
+
+    return (
+        <div className="relative group p-4 rounded-xl border border-blue-100 bg-blue-50 flex flex-col min-w-[150px]">
+            <div className="flex justify-between items-start">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider truncate max-w-[80%]">{config.title || 'Chỉ số'}</span>
+                <button onClick={onDelete} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X size={14}/></button>
+            </div>
+            <div className="text-2xl font-bold text-blue-800 mt-1">
+                {result.value} <span className="text-sm font-medium text-slate-400">{result.suffix}</span>
+            </div>
+            <div className="text-[10px] text-slate-400 mt-1 truncate">
+                {config.column} {config.operation === 'avg' ? 'TB' : (config.targetValue ? `(${config.targetValue})` : '')}
+            </div>
+        </div>
+    );
+};
+
 // --- MAIN COMPONENTS ---
 
 const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
-  
   const login = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setLoading(true);
@@ -289,7 +336,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
           headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
         });
         
-        // TÍNH TOÁN THỜI GIAN HẾT HẠN (Mặc định 1h = 3600s, trừ hao 100s cho an toàn)
         const expiresAt = Date.now() + (tokenResponse.expires_in || 3599) * 1000 - 100000;
 
         const userData = {
@@ -297,7 +343,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
             email: userInfo.data.email,
             imageUrl: userInfo.data.picture,
             accessToken: tokenResponse.access_token,
-            expiresAt: expiresAt // LƯU THỜI GIAN HẾT HẠN
+            expiresAt: expiresAt 
         };
         localStorage.setItem('pka_user_session', JSON.stringify(userData));
         onLoginSuccess(userData);
@@ -390,7 +436,6 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
 
     } catch (error) {
         console.error("Lỗi đồng bộ lịch sử Drive:", error);
-        // PHÁT HIỆN LỖI 401/403 Ở ĐÂY ĐỂ BÁO HẾT HẠN
         if (error.response && (error.response.status === 403 || error.response.status === 401)) {
             setDrivePermissionError(true);
         }
@@ -426,7 +471,7 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
     } catch (error) {
         setChecking(false);
         if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-            setDrivePermissionError(true); // Kích hoạt UI hết hạn
+            setDrivePermissionError(true); 
             return;
         } else {
              alert("Không thể tìm thấy ID Sheet này. Vui lòng kiểm tra lại.");
@@ -513,13 +558,12 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
                 {syncingHistory && <span className="text-xs text-blue-500 flex items-center gap-1"><RefreshCw size={10} className="animate-spin"/> Đang đồng bộ...</span>}
             </div>
 
-            {/* UI BÁO HẾT PHIÊN - CLICK ĐỂ LOGIN LẠI NGAY */}
             {drivePermissionError && (
                 <div className="mb-3 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 flex flex-col items-center text-center gap-2">
                     <div className="flex items-center gap-2 font-bold"><AlertCircle size={18}/> Phiên làm việc hết hạn</div>
                     <p className="text-xs">Để đảm bảo bảo mật, Google yêu cầu xác thực lại sau mỗi giờ.</p>
                     <button onClick={onLogout} className="mt-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold flex items-center gap-2 transition-colors">
-                        <LogIn size={16}/> Đăng nhập lại ngay
+                        <ArrowRight size={16}/> Đăng nhập lại ngay
                     </button>
                 </div>
             )}
@@ -577,6 +621,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
 
   // STATE MOBILE SELECT
   const [isMobileSelectMode, setIsMobileSelectMode] = useState(false);
+  const [kpiModalOpen, setKpiModalOpen] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
@@ -585,6 +630,13 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [colSearchTerm, setColSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
+
+  // NÂNG CẤP: KPI STATE
+  const [kpis, setKpis] = useState(() => {
+      const saved = localStorage.getItem('pka_dashboard_kpis');
+      return saved ? JSON.parse(saved) : [];
+  });
+  useEffect(() => localStorage.setItem('pka_dashboard_kpis', JSON.stringify(kpis)), [kpis]);
 
   const [charts, setCharts] = useState(() => {
       const saved = localStorage.getItem('pka_dashboard_charts');
@@ -636,12 +688,21 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const updateChart = (id, newConfig) => {
       setCharts(prev => prev.map(c => c.id === id ? { ...c, ...newConfig } : c));
   };
+  
+  const addKPI = (kpiConfig) => {
+      setKpis(prev => [...prev, { id: Date.now(), ...kpiConfig }]);
+  };
+  
+  const removeKPI = (id) => {
+      setKpis(prev => prev.filter(k => k.id !== id));
+  };
 
-  const performSave = useCallback(async (currentCharts, currentQuery) => {
+  const performSave = useCallback(async (currentCharts, currentQuery, currentKpis) => {
       setSaveStatus('saving');
       try {
           const configData = {
               charts: currentCharts,
+              kpis: currentKpis, // LƯU KPI
               queryConfig: currentQuery,
               meta: { 
                   name: config.name, 
@@ -682,11 +743,11 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       if (!isConfigLoaded) return;
       setSaveStatus('unsaved'); 
       const timer = setTimeout(() => {
-          performSave(charts, queryConfig);
+          performSave(charts, queryConfig, kpis);
       }, AUTO_SAVE_DELAY); 
 
       return () => clearTimeout(timer); 
-  }, [charts, queryConfig, isConfigLoaded, performSave]);
+  }, [charts, queryConfig, kpis, isConfigLoaded, performSave]);
 
   const loadConfigFromSheet = async () => {
       try {
@@ -697,6 +758,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
           if (rows && rows.length > 0 && rows[0][0]) {
               const savedConfig = JSON.parse(rows[0][0]);
               if (savedConfig.charts) setCharts(savedConfig.charts);
+              if (savedConfig.kpis) setKpis(savedConfig.kpis); // LOAD KPI
               if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
               console.log("Đã tải cấu hình từ Sheet thành công.");
           }
@@ -1065,6 +1127,8 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                         <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap hidden md:inline">{resultState.data.length} dòng</span>
                         <button onClick={() => setIsSortModalOpen(true)} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><ListFilter size={16} /> Sort</button>
                         <button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> All</button>
+                        
+                        {/* FIX: GỌI ĐÚNG HÀM exportToExcel (MỚI) */}
                         <button onClick={() => exportToExcel(resultState.data, resultState.visibleCols, 'KetQua.xlsx')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
                      </div>
                  )}
@@ -1080,7 +1144,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                                 className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
                             <div className="bg-white border-t border-slate-200 p-2 flex justify-between items-center"><div className="flex items-center gap-2"><span className="text-xs text-slate-500">Hiển thị:</span><select className="text-xs border border-slate-300 rounded p-1" value={itemsPerPage} onChange={(e) => handleItemsPerPageChange(e.target.value)}><option value="50">50 dòng</option><option value="100">100 dòng</option><option value="500">500 dòng</option><option value="1000">1000 dòng</option><option value="all">Tất cả</option></select><span className="text-xs text-slate-500 ml-2">{itemsPerPage !== 'all' ? `${(currentPage - 1) * itemsPerPage + 1} - ${Math.min(currentPage * itemsPerPage, sortedData.length)} / ${sortedData.length}` : `Toàn bộ ${sortedData.length} dòng`}</span></div>{itemsPerPage !== 'all' && (<div className="flex gap-2"><button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowLeft size={16}/></button><button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowRight size={16}/></button></div>)}</div>
                         </>
-                    ) : ( <SuperAnalytics data={resultState.data} charts={charts} setCharts={setCharts} onUpdate={updateChart} /> )
+                    ) : ( <SuperAnalytics data={resultState.data} charts={charts} kpis={kpis} setCharts={setCharts} addKPI={addKPI} removeKPI={removeKPI} onUpdate={updateChart} columns={allColumns} /> )
                 )}
             </div>
         </div>
@@ -1190,16 +1254,74 @@ const ChartCard = ({ config, data, onDelete, onUpdate }) => {
     );
 };
 
+// --- KPI COMPONENT ---
+const KPIWidget = ({ config, data, onDelete, onUpdate }) => {
+    // Logic tính toán KPI
+    const result = useMemo(() => {
+        if (!data || !data.length) return { value: 0, suffix: '' };
+        
+        const { column, operation, targetValue } = config;
+        const validValues = data.map(r => r[column]).filter(v => v !== undefined && v !== '');
+
+        if (operation === 'avg') {
+            const sum = validValues.reduce((a, b) => a + (parseFloat(b) || 0), 0);
+            return { value: validValues.length ? (sum / validValues.length).toFixed(2) : 0, suffix: '' };
+        }
+        
+        if (operation === 'count_match' || operation === 'percent_match') {
+            const matches = data.filter(row => {
+                const cellVal = row[column];
+                if (!isNaN(parseFloat(targetValue))) { // So sánh số
+                     return parseFloat(cellVal) < parseFloat(targetValue); // Mặc định là nhỏ hơn (cảnh báo)
+                }
+                return String(cellVal).toLowerCase().includes(String(targetValue).toLowerCase());
+            }).length;
+
+            if (operation === 'percent_match') {
+                return { value: ((matches / data.length) * 100).toFixed(1), suffix: '%' };
+            }
+            return { value: matches, suffix: 'SV' };
+        }
+        
+        return { value: 0, suffix: '' };
+    }, [data, config]);
+
+    return (
+        <div className="relative group p-4 rounded-xl border border-blue-100 bg-blue-50 flex flex-col min-w-[150px]">
+            <div className="flex justify-between items-start">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider truncate max-w-[80%]">{config.title || 'Chỉ số'}</span>
+                <button onClick={onDelete} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X size={14}/></button>
+            </div>
+            <div className="text-2xl font-bold text-blue-800 mt-1">
+                {result.value} <span className="text-sm font-medium text-slate-400">{result.suffix}</span>
+            </div>
+            <div className="text-[10px] text-slate-400 mt-1 truncate">
+                {config.column} {config.operation === 'avg' ? 'TB' : (config.targetValue ? `(${config.targetValue})` : '')}
+            </div>
+        </div>
+    );
+};
+
 // --- SUPER ANALYTICS DASHBOARD ---
-const SuperAnalytics = ({ data, charts, setCharts, onUpdate }) => {
+const SuperAnalytics = ({ data, charts, kpis, setCharts, addKPI, removeKPI, onUpdate, columns }) => {
     if (!data || data.length === 0) return <div className="p-10 text-center text-slate-400">Chưa có dữ liệu. Vui lòng chạy truy vấn.</div>;
-    const columns = Object.keys(data[0]);
+    const cols = columns || Object.keys(data[0]);
+
+    // KPI Modal State
+    const [isKPIModalOpen, setIsKPIModalOpen] = useState(false);
+    const [newKPI, setNewKPI] = useState({ title: '', column: cols[0], operation: 'count_match', targetValue: '' });
+
+    const handleAddKPI = () => {
+        addKPI(newKPI);
+        setIsKPIModalOpen(false);
+        setNewKPI({ title: '', column: cols[0], operation: 'count_match', targetValue: '' });
+    };
 
     const addChart = (config) => setCharts(p => [...p, { id: Date.now(), ...config }]);
     const removeChart = (id) => setCharts(p => p.filter(c => c.id !== id));
 
     const templates = useMemo(() => {
-        const find = k => columns.find(c => c.toLowerCase().includes(k));
+        const find = k => cols.find(c => c.toLowerCase().includes(k));
         return [
             { label: 'Trạng thái', x: find('trạng thái') || find('status') },
             { label: 'Giới tính', x: find('giới tính') || find('phái'), type: 'pie' },
@@ -1207,25 +1329,37 @@ const SuperAnalytics = ({ data, charts, setCharts, onUpdate }) => {
             { label: 'Lớp', x: find('lớp') },
             { label: 'Khu vực', x: find('khu vực') },
         ].filter(t => t.x);
-    }, [columns]);
+    }, [cols]);
 
     return (
-        <div className="h-full flex flex-col bg-slate-50">
-            <div className="p-4 bg-white border-b border-slate-200">
+        <div className="h-full flex flex-col bg-slate-50 overflow-y-auto">
+            
+            {/* KPI SECTION */}
+            <div className="p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {kpis.map(kpi => (
+                    <KPIWidget key={kpi.id} config={kpi} data={data} onDelete={() => removeKPI(kpi.id)} />
+                ))}
+                <button onClick={() => setIsKPIModalOpen(true)} className="p-4 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 hover:border-blue-400 hover:text-blue-500 transition-colors min-h-[100px]">
+                    <Plus size={24} />
+                    <span className="text-xs font-bold mt-1">Thêm KPI</span>
+                </button>
+            </div>
+
+            <div className="px-4 pb-4 border-b border-slate-200">
                 <div className="flex flex-wrap gap-2 items-center">
-                    <span className="text-xs font-bold text-slate-400 uppercase mr-2">Mẫu nhanh:</span>
+                    <span className="text-xs font-bold text-slate-400 uppercase mr-2">Biểu đồ mẫu:</span>
                     {templates.map(t => (
-                        <button key={t.label} onClick={() => addChart({ x: t.x, y: ['count'], type: t.type || 'bar' })} className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-xs font-medium hover:bg-blue-100 border border-blue-200 transition-colors">+ {t.label}</button>
+                        <button key={t.label} onClick={() => addChart({ x: t.x, y: ['count'], type: t.type || 'bar' })} className="px-3 py-1.5 rounded-full bg-white text-blue-800 text-xs font-medium hover:bg-blue-50 border border-slate-200 transition-colors">+ {t.label}</button>
                     ))}
                     <div className="h-6 w-px bg-slate-200 mx-2"></div>
-                    <button onClick={() => addChart({ x: columns[0], y: 'count', type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
+                    <button onClick={() => addChart({ x: cols[0], y: 'count', type: 'bar' })} className="px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-medium hover:bg-black transition-colors flex items-center gap-1"><Plus size={12}/> Tùy chỉnh</button>
                     {charts.length > 0 && <button onClick={() => setCharts([])} className="ml-auto text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 size={16}/></button>}
                 </div>
             </div>
             
-            <div className="flex-1 p-6 overflow-y-auto">
+            <div className="flex-1 p-6">
                 {charts.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                    <div className="h-full flex flex-col items-center justify-center text-slate-300 min-h-[200px]">
                         <BarChart3 size={48} className="mb-2 opacity-50"/>
                         <p>Chọn mẫu biểu đồ ở trên để bắt đầu phân tích</p>
                     </div>
@@ -1243,6 +1377,43 @@ const SuperAnalytics = ({ data, charts, setCharts, onUpdate }) => {
                     </div>
                 )}
             </div>
+
+            {/* KPI MODAL */}
+            {isKPIModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={() => setIsKPIModalOpen(false)}>
+                    <div className="bg-white w-full max-w-sm rounded-xl shadow-xl p-6" onClick={e => e.stopPropagation()}>
+                        <h3 className="font-bold text-lg mb-4 text-blue-900">Tạo chỉ số KPI mới</h3>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500">Tên chỉ số</label>
+                                <input type="text" className="w-full border rounded p-2 text-sm" placeholder="VD: Tỷ lệ cảnh báo" value={newKPI.title} onChange={e => setNewKPI({...newKPI, title: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500">Cột dữ liệu</label>
+                                <select className="w-full border rounded p-2 text-sm" value={newKPI.column} onChange={e => setNewKPI({...newKPI, column: e.target.value})}>
+                                    {cols.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500">Phép tính</label>
+                                <select className="w-full border rounded p-2 text-sm" value={newKPI.operation} onChange={e => setNewKPI({...newKPI, operation: e.target.value})}>
+                                    <option value="count_match">Đếm số lượng (thỏa đk)</option>
+                                    <option value="percent_match">Tính tỷ lệ % (thỏa đk)</option>
+                                    <option value="avg">Tính trung bình cộng</option>
+                                </select>
+                            </div>
+                            {newKPI.operation !== 'avg' && (
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500">Giá trị mục tiêu (Để so sánh)</label>
+                                    <input type="text" className="w-full border rounded p-2 text-sm" placeholder="VD: Cảnh báo, hoặc < 2.0" value={newKPI.targetValue} onChange={e => setNewKPI({...newKPI, targetValue: e.target.value})} />
+                                    <p className="text-[10px] text-slate-400 mt-1">Nhập số để so sánh nhỏ hơn (VD: 2.0), hoặc chữ để tìm chứa (VD: Cảnh báo)</p>
+                                </div>
+                            )}
+                            <button onClick={handleAddKPI} className="w-full bg-blue-900 text-white py-2 rounded-lg font-bold mt-2">Thêm KPI</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
