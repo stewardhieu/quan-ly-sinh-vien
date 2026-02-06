@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx'; // Import thư viện Excel
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, AreaChart, Area,
@@ -272,54 +272,6 @@ const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => 
                     <button onClick={addRule} className="mt-4 flex items-center gap-1 text-xs font-bold text-blue-700 hover:bg-blue-50 px-3 py-2 rounded transition-colors"><Plus size={14}/> Thêm mức sắp xếp</button>
                 </div>
             </motion.div>
-        </div>
-    );
-};
-
-// --- KPI COMPONENT (MỚI) ---
-const KPIWidget = ({ config, data, onDelete, onUpdate, columns }) => {
-    // Logic tính toán KPI
-    const result = useMemo(() => {
-        if (!data || !data.length) return { value: 0, suffix: '' };
-        
-        const { column, operation, targetValue } = config;
-        const validValues = data.map(r => r[column]).filter(v => v !== undefined && v !== '');
-
-        if (operation === 'avg') {
-            const sum = validValues.reduce((a, b) => a + (parseFloat(b) || 0), 0);
-            return { value: validValues.length ? (sum / validValues.length).toFixed(2) : 0, suffix: '' };
-        }
-        
-        if (operation === 'count_match' || operation === 'percent_match') {
-            const matches = data.filter(row => {
-                const cellVal = row[column];
-                if (!isNaN(parseFloat(targetValue))) { // So sánh số
-                     return parseFloat(cellVal) < parseFloat(targetValue); // Mặc định là nhỏ hơn (cảnh báo)
-                }
-                return String(cellVal).toLowerCase().includes(String(targetValue).toLowerCase());
-            }).length;
-
-            if (operation === 'percent_match') {
-                return { value: ((matches / data.length) * 100).toFixed(1), suffix: '%' };
-            }
-            return { value: matches, suffix: 'SV' };
-        }
-        
-        return { value: 0, suffix: '' };
-    }, [data, config]);
-
-    return (
-        <div className="relative group p-4 rounded-xl border border-blue-100 bg-blue-50 flex flex-col min-w-[150px]">
-            <div className="flex justify-between items-start">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider truncate max-w-[80%]">{config.title || 'Chỉ số'}</span>
-                <button onClick={onDelete} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X size={14}/></button>
-            </div>
-            <div className="text-2xl font-bold text-blue-800 mt-1">
-                {result.value} <span className="text-sm font-medium text-slate-400">{result.suffix}</span>
-            </div>
-            <div className="text-[10px] text-slate-400 mt-1 truncate">
-                {config.column} {config.operation === 'avg' ? 'TB' : (config.targetValue ? `(${config.targetValue})` : '')}
-            </div>
         </div>
     );
 };
@@ -631,7 +583,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
 
-  // NÂNG CẤP: KPI STATE
+  // KPI STATE
   const [kpis, setKpis] = useState(() => {
       const saved = localStorage.getItem('pka_dashboard_kpis');
       return saved ? JSON.parse(saved) : [];
@@ -702,7 +654,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       try {
           const configData = {
               charts: currentCharts,
-              kpis: currentKpis, // LƯU KPI
+              kpis: currentKpis, 
               queryConfig: currentQuery,
               meta: { 
                   name: config.name, 
@@ -758,7 +710,7 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
           if (rows && rows.length > 0 && rows[0][0]) {
               const savedConfig = JSON.parse(rows[0][0]);
               if (savedConfig.charts) setCharts(savedConfig.charts);
-              if (savedConfig.kpis) setKpis(savedConfig.kpis); // LOAD KPI
+              if (savedConfig.kpis) setKpis(savedConfig.kpis); 
               if (savedConfig.queryConfig) setQueryConfig(savedConfig.queryConfig);
               console.log("Đã tải cấu hình từ Sheet thành công.");
           }
@@ -997,13 +949,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       return <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle2 size={12}/> Đã lưu</span>;
   };
 
-  // CHECK TOKEN EXPIRED ON LOAD
-  useEffect(() => {
-    if (user && user.expiresAt && Date.now() > user.expiresAt) {
-      onLogout(); // Tự động logout nếu đã hết hạn
-    }
-  }, [user]);
-
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
       <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
@@ -1158,21 +1103,18 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   );
 };
 
-// --- CHART COMPONENTS (Nâng cấp Stack/Segment + Controlled) ---
+// --- CHART COMPONENTS ---
 const ChartCard = ({ config, data, onDelete, onUpdate }) => {
-    // Không dùng state nội bộ nữa, dùng props từ config
     const type = config.type || 'bar';
     const xAxis = config.x || '';
     const segmentBy = config.segmentBy || '';
     
     const columns = Object.keys(data[0] || {});
 
-    // Helper update function
     const updateConfig = (key, value) => {
         onUpdate({ [key]: value });
     };
 
-    // Logic xử lý dữ liệu phức tạp (Segment / Stack)
     const processed = useMemo(() => {
         const segments = segmentBy ? [...new Set(data.map(r => r[segmentBy] || 'N/A'))].sort() : ['count'];
         const grouped = data.reduce((acc, row) => {
@@ -1256,7 +1198,6 @@ const ChartCard = ({ config, data, onDelete, onUpdate }) => {
 
 // --- KPI COMPONENT ---
 const KPIWidget = ({ config, data, onDelete, onUpdate }) => {
-    // Logic tính toán KPI
     const result = useMemo(() => {
         if (!data || !data.length) return { value: 0, suffix: '' };
         
@@ -1271,8 +1212,8 @@ const KPIWidget = ({ config, data, onDelete, onUpdate }) => {
         if (operation === 'count_match' || operation === 'percent_match') {
             const matches = data.filter(row => {
                 const cellVal = row[column];
-                if (!isNaN(parseFloat(targetValue))) { // So sánh số
-                     return parseFloat(cellVal) < parseFloat(targetValue); // Mặc định là nhỏ hơn (cảnh báo)
+                if (!isNaN(parseFloat(targetValue))) { 
+                     return parseFloat(cellVal) < parseFloat(targetValue); 
                 }
                 return String(cellVal).toLowerCase().includes(String(targetValue).toLowerCase());
             }).length;
