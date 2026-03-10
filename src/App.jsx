@@ -280,6 +280,7 @@ const AdvancedSortModal = ({ isOpen, onClose, columns, sortRules, onApply }) => 
 
 const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
+  
   const login = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setLoading(true);
@@ -423,7 +424,8 @@ const SetupScreen = ({ user, onConfig, onLogout }) => {
     } catch (error) {
         setChecking(false);
         if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-            setDrivePermissionError(true); 
+            alert("Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập Sheet này. Vui lòng đăng nhập lại.");
+            onLogout();
             return;
         } else {
              alert("Không thể tìm thấy ID Sheet này. Vui lòng kiểm tra lại.");
@@ -571,7 +573,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [sortRules, setSortRules] = useState([]); 
   const [isSortModalOpen, setIsSortModalOpen] = useState(false);
 
-  // STATE MOBILE SELECT
   const [isMobileSelectMode, setIsMobileSelectMode] = useState(false);
   const [kpiModalOpen, setKpiModalOpen] = useState(false);
 
@@ -583,7 +584,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState({ type: '', id: null });
 
-  // KPI STATE
   const [kpis, setKpis] = useState(() => {
       const saved = localStorage.getItem('pka_dashboard_kpis');
       return saved ? JSON.parse(saved) : [];
@@ -815,42 +815,39 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
     let filtered = [...rawData];
     let orderedData = [];
 
+    // LỌC THEO PASTE EXCEL (CHỈNH SỬA: Chèn dòng trắng nếu không tìm thấy)
     if (queryConfig.bulkFilter.values.trim() && queryConfig.bulkFilter.column) {
       const targetCol = queryConfig.bulkFilter.column;
-      const rawValues = queryConfig.bulkFilter.values.split(/[\n\r\t,;]+/); 
-      const uniquePasteOrder = [...new Set(rawValues.map(s => s.trim()).filter(s => s !== ''))];
+      // Dùng \n để tách theo từng dòng Excel
+      const rawValues = queryConfig.bulkFilter.values.split(/[\n\r]+/).map(s => s.trim()).filter(s => s !== ''); 
       
-      if (uniquePasteOrder.length > 0) {
-          const rowMap = new Map();
-          filtered.forEach(row => {
-              const cellVal = String(row[targetCol]).trim(); 
-              
+      if (rawValues.length > 0) {
+          rawValues.forEach(val => {
+              let matches = [];
+              const cellValLower = val.toLowerCase();
+
               if (bulkFilterMode === 'exact') {
-                  const cellValLower = cellVal.toLowerCase();
-                  if (uniquePasteOrder.some(val => val.toLowerCase() === cellValLower)) {
-                      const key = uniquePasteOrder.find(val => val.toLowerCase() === cellValLower).toLowerCase();
-                      if (!rowMap.has(key)) rowMap.set(key, []); 
-                      rowMap.get(key).push(row); 
-                  }
+                  matches = filtered.filter(row => String(row[targetCol]).trim().toLowerCase() === cellValLower);
               } else {
-                  const matchedKey = uniquePasteOrder.find(searchKey => checkSmartMatch(cellVal, searchKey));
-                  if (matchedKey) { 
-                      const key = matchedKey.toLowerCase();
-                      if (!rowMap.has(key)) rowMap.set(key, []); 
-                      rowMap.get(key).push(row); 
-                  }
+                  matches = filtered.filter(row => checkSmartMatch(String(row[targetCol]), val));
               }
-          });
-          
-          uniquePasteOrder.forEach(val => { 
-              const key = val.toLowerCase();
-              if (rowMap.has(key)) orderedData.push(...rowMap.get(key)); 
+
+              if (matches.length > 0) {
+                  orderedData.push(...matches); // Nếu có thì nhét vào
+              } else {
+                  // KHÔNG TÌM THẤY -> TẠO DÒNG TRẮNG (Chống lệch dòng)
+                  const blankRow = { _isBlank: true };
+                  allColumns.forEach(col => blankRow[col] = ''); // Các cột khác rỗng
+                  blankRow[targetCol] = val; // Trả lại mã vừa tìm để dễ đối chiếu
+                  orderedData.push(blankRow);
+              }
           });
           filtered = orderedData;
       }
     }
 
     filtered = filtered.filter(row => {
+        if (row._isBlank) return true; // Bỏ qua lọc chi tiết nếu là dòng trắng vừa chèn
         let result = true; 
         queryConfig.filters.forEach((filter, index) => {
             const isMatch = checkCondition(row, filter);
@@ -884,7 +881,20 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       }
   };
 
-  const handleMouseDown = (r, c) => { if (!isMobileSelectMode) setSelection({ start: { row: r, col: c }, end: { row: r, col: c }, isDragging: true }); };
+  // CHỈNH SỬA MOUSE DOWN: Thêm tính năng Shift + Click
+  const handleMouseDown = (e, r, c) => { 
+      if (!isMobileSelectMode) {
+          if (e.shiftKey && selection.start.row !== null) {
+              // Nếu giữ Shift -> Cập nhật điểm cuối, giữ nguyên điểm đầu
+              setSelection(prev => ({ ...prev, end: { row: r, col: c }, isDragging: false }));
+              window.getSelection()?.removeAllRanges(); // Chống bôi đen text xanh
+          } else {
+              // Click bình thường -> Bắt đầu vùng chọn mới
+              setSelection({ start: { row: r, col: c }, end: { row: r, col: c }, isDragging: true }); 
+          }
+      } 
+  };
+  
   const handleMouseEnter = (r, c) => { if (selection.isDragging && !isMobileSelectMode) setSelection(prev => ({ ...prev, end: { row: r, col: c } })); };
   useEffect(() => { const up = () => { if (selection.isDragging && !isMobileSelectMode) setSelection(p => ({ ...p, isDragging: false })); }; window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up); }, [selection.isDragging, isMobileSelectMode]);
   
@@ -941,7 +951,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
   const suggestionOptions = activeFilterObj ? getColumnOptions(activeFilterObj.column) : [];
   const suggestionInitialValue = activeFilterObj ? activeFilterObj.value : "";
 
-  // Render trạng thái lưu
   const renderSaveStatus = () => {
       if (!isConfigLoaded) return null;
       if (saveStatus === 'saving') return <span className="text-xs text-blue-600 font-medium flex items-center gap-1"><RefreshCw size={12} className="animate-spin"/> Đang lưu...</span>;
@@ -949,13 +958,18 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
       return <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle2 size={12}/> Đã lưu</span>;
   };
 
+  useEffect(() => {
+    if (user && user.expiresAt && Date.now() > user.expiresAt) {
+      onLogout(); 
+    }
+  }, [user]);
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
       <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
         <div className="flex items-center gap-3"><div className="bg-blue-900 text-white p-2 rounded hidden md:block"><LayoutTemplate size={20} /></div><div><h1 className="font-bold text-blue-900 leading-tight text-sm md:text-base">{config.name || 'PKA MANAGEMENT'}</h1><p className="text-xs text-slate-500 hidden md:block">Hệ thống Tra cứu & Phân tích dữ liệu</p></div></div>
         <div className="flex items-center gap-2 md:gap-4">
             
-            {/* TRẠNG THÁI AUTO SAVE */}
             <div className="bg-slate-50 border border-slate-200 rounded-full px-3 py-1 flex items-center gap-2">
                 <Cloud size={14} className="text-slate-400"/>
                 {renderSaveStatus()}
@@ -1011,7 +1025,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                             </div>
                         </div>
                         <div className="flex flex-col gap-2">
-                            {/* FIX LAYOUT MOBILE: Dùng flex-wrap và padding phù hợp */}
                             <div className="flex justify-between items-center bg-slate-100 p-2 rounded">
                                 <span className="text-xs font-semibold uppercase text-slate-500">Điều kiện chi tiết</span>
                                 <button onClick={addFilterCondition} className="text-xs flex items-center gap-1 bg-blue-900 text-white px-3 py-1.5 rounded hover:bg-blue-800 shadow-sm transition-transform active:scale-95">
@@ -1050,10 +1063,8 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
             <div className="flex flex-wrap gap-2 justify-between items-center px-4 pt-2 border-b border-slate-200 bg-slate-50">
                  <div className="flex gap-2"><button onClick={() => setView('table')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'table' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><TableIcon size={16} /> Kết Quả</button><button onClick={() => setView('analytics')} className={`px-4 py-2 text-sm font-bold rounded-t-lg flex items-center gap-2 ${view === 'analytics' ? 'bg-white text-blue-900 border-t border-x border-slate-200 -mb-px z-10' : 'text-slate-500'}`}><ChartIcon size={16} /> Phân tích</button></div>
                  
-                 {/* FIX MOBILE: Ẩn bớt nút trên mobile để đỡ rối, hoặc gom nhóm */}
                  {resultState.isExecuted && view === 'table' && (
                      <div className="flex items-center gap-2 pb-1 overflow-x-auto no-scrollbar">
-                        {/* TOGGLE MOBILE SELECT */}
                         <button 
                             onClick={() => setIsMobileSelectMode(!isMobileSelectMode)} 
                             className={`flex items-center gap-1 text-xs md:text-sm font-medium whitespace-nowrap px-2 py-1 rounded transition-colors ${isMobileSelectMode ? 'bg-green-100 text-green-700 border border-green-300' : 'text-slate-600 hover:text-blue-900 bg-slate-100'}`}
@@ -1072,8 +1083,6 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                         <span className="text-xs font-semibold text-blue-900 bg-blue-50 px-2 py-1 rounded whitespace-nowrap hidden md:inline">{resultState.data.length} dòng</span>
                         <button onClick={() => setIsSortModalOpen(true)} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><ListFilter size={16} /> Sort</button>
                         <button onClick={handleCopyAll} className="flex items-center gap-1 text-xs md:text-sm text-slate-600 hover:text-blue-900 font-medium whitespace-nowrap"><Copy size={16} /> All</button>
-                        
-                        {/* FIX: GỌI ĐÚNG HÀM exportToExcel (MỚI) */}
                         <button onClick={() => exportToExcel(resultState.data, resultState.visibleCols, 'KetQua.xlsx')} className="flex items-center gap-1 text-xs md:text-sm text-green-700 hover:text-green-800 font-medium whitespace-nowrap"><FileSpreadsheet size={16} /> Excel</button>
                      </div>
                  )}
@@ -1082,9 +1091,9 @@ const Dashboard = ({ user, config, onLogout, onChangeSource }) => {
                 {!resultState.isExecuted ? (<div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 p-4 text-center"><Search size={64} className="mb-4 opacity-20" /><p className="text-lg font-medium">Vui lòng thiết lập điều kiện và chạy truy vấn</p></div>) : (
                     view === 'table' ? (
                         <>
-                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} onClick={() => handleQuickSort(col)} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors cursor-pointer" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden"><span className="truncate" title={col}>{col}</span>{sortRules.length > 0 && sortRules[0].column === col ? (sortRules[0].direction === 'asc' ? <ArrowUp size={12} className="text-blue-600"/> : <ArrowDown size={12} className="text-blue-600"/>) : <ArrowUpDown size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />}</div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} onClick={(e) => e.stopPropagation()}/></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className="hover:bg-slate-50"><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{(itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} 
+                            <div className="flex-1 overflow-auto select-none" ref={tableRef}><table className="min-w-full text-left text-sm border-collapse" style={{ tableLayout: 'fixed' }}><thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 shadow-sm"><tr><th className="w-10 p-2 border border-slate-300 bg-slate-200 text-center sticky left-0 z-20">#</th>{resultState.visibleCols.map((col, cIdx) => (<th key={col} onClick={() => handleQuickSort(col)} style={{ width: columnWidths[col] || 150 }} className="relative p-2 border border-slate-300 group hover:bg-blue-50 transition-colors cursor-pointer" draggable onDragStart={(e) => handleDragStart(e, cIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cIdx)}><div className="flex items-center justify-between gap-1 w-full overflow-hidden"><span className="truncate" title={col}>{col}</span>{sortRules.length > 0 && sortRules[0].column === col ? (sortRules[0].direction === 'asc' ? <ArrowUp size={12} className="text-blue-600"/> : <ArrowDown size={12} className="text-blue-600"/>) : <ArrowUpDown size={12} className="text-slate-300 opacity-0 group-hover:opacity-100" />}</div><div className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 z-10" onMouseDown={(e) => startResizing(e, col)} onClick={(e) => e.stopPropagation()}/></th>))}</tr></thead><tbody>{currentTableData.map((row, rIdx) => (<tr key={rIdx} className={`hover:bg-slate-50 ${row._isBlank ? 'bg-red-50/40' : ''}`}><td className="p-2 border border-slate-300 text-center text-xs text-slate-500 bg-slate-50 sticky left-0 z-10">{row._isBlank ? 'Không có' : (itemsPerPage === 'all' ? rIdx : (currentPage - 1) * itemsPerPage + rIdx) + 1}</td>{resultState.visibleCols.map((col, cIdx) => (<td key={`${rIdx}-${col}`} 
                                 onClick={() => handleCellClick(rIdx, cIdx)}
-                                onMouseDown={() => handleMouseDown(rIdx, cIdx)} 
+                                onMouseDown={(e) => handleMouseDown(e, rIdx, cIdx)} 
                                 onMouseEnter={() => handleMouseEnter(rIdx, cIdx)} 
                                 className={`p-2 border border-slate-300 whitespace-nowrap overflow-hidden cursor-cell ${isCellSelected(rIdx, cIdx) ? 'bg-blue-600 text-white' : ''}`}>{formatValue(row[col])}</td>))}</tr>))}</tbody></table></div>
                             <div className="bg-white border-t border-slate-200 p-2 flex justify-between items-center"><div className="flex items-center gap-2"><span className="text-xs text-slate-500">Hiển thị:</span><select className="text-xs border border-slate-300 rounded p-1" value={itemsPerPage} onChange={(e) => handleItemsPerPageChange(e.target.value)}><option value="50">50 dòng</option><option value="100">100 dòng</option><option value="500">500 dòng</option><option value="1000">1000 dòng</option><option value="all">Tất cả</option></select><span className="text-xs text-slate-500 ml-2">{itemsPerPage !== 'all' ? `${(currentPage - 1) * itemsPerPage + 1} - ${Math.min(currentPage * itemsPerPage, sortedData.length)} / ${sortedData.length}` : `Toàn bộ ${sortedData.length} dòng`}</span></div>{itemsPerPage !== 'all' && (<div className="flex gap-2"><button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowLeft size={16}/></button><button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"><ArrowRight size={16}/></button></div>)}</div>
@@ -1109,15 +1118,16 @@ const ChartCard = ({ config, data, onDelete, onUpdate }) => {
     const xAxis = config.x || '';
     const segmentBy = config.segmentBy || '';
     
-    const columns = Object.keys(data[0] || {});
+    const columns = Object.keys(data[0] || {}).filter(c => c !== '_isBlank');
 
     const updateConfig = (key, value) => {
         onUpdate({ [key]: value });
     };
 
     const processed = useMemo(() => {
-        const segments = segmentBy ? [...new Set(data.map(r => r[segmentBy] || 'N/A'))].sort() : ['count'];
-        const grouped = data.reduce((acc, row) => {
+        const validData = data.filter(d => !d._isBlank);
+        const segments = segmentBy ? [...new Set(validData.map(r => r[segmentBy] || 'N/A'))].sort() : ['count'];
+        const grouped = validData.reduce((acc, row) => {
             const xVal = row[xAxis] || 'N/A';
             if (!acc[xVal]) {
                 acc[xVal] = { name: xVal };
@@ -1201,8 +1211,9 @@ const KPIWidget = ({ config, data, onDelete, onUpdate }) => {
     const result = useMemo(() => {
         if (!data || !data.length) return { value: 0, suffix: '' };
         
+        const validData = data.filter(d => !d._isBlank);
         const { column, operation, targetValue } = config;
-        const validValues = data.map(r => r[column]).filter(v => v !== undefined && v !== '');
+        const validValues = validData.map(r => r[column]).filter(v => v !== undefined && v !== '');
 
         if (operation === 'avg') {
             const sum = validValues.reduce((a, b) => a + (parseFloat(b) || 0), 0);
@@ -1210,7 +1221,7 @@ const KPIWidget = ({ config, data, onDelete, onUpdate }) => {
         }
         
         if (operation === 'count_match' || operation === 'percent_match') {
-            const matches = data.filter(row => {
+            const matches = validData.filter(row => {
                 const cellVal = row[column];
                 if (!isNaN(parseFloat(targetValue))) { 
                      return parseFloat(cellVal) < parseFloat(targetValue); 
@@ -1219,7 +1230,7 @@ const KPIWidget = ({ config, data, onDelete, onUpdate }) => {
             }).length;
 
             if (operation === 'percent_match') {
-                return { value: ((matches / data.length) * 100).toFixed(1), suffix: '%' };
+                return { value: ((matches / validData.length) * 100).toFixed(1), suffix: '%' };
             }
             return { value: matches, suffix: 'SV' };
         }
@@ -1246,7 +1257,7 @@ const KPIWidget = ({ config, data, onDelete, onUpdate }) => {
 // --- SUPER ANALYTICS DASHBOARD ---
 const SuperAnalytics = ({ data, charts, kpis, setCharts, addKPI, removeKPI, onUpdate, columns }) => {
     if (!data || data.length === 0) return <div className="p-10 text-center text-slate-400">Chưa có dữ liệu. Vui lòng chạy truy vấn.</div>;
-    const cols = columns || Object.keys(data[0]);
+    const cols = (columns || Object.keys(data[0])).filter(c => c !== '_isBlank');
 
     // KPI Modal State
     const [isKPIModalOpen, setIsKPIModalOpen] = useState(false);
